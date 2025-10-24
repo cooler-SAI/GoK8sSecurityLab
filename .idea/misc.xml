@@ -197,7 +197,4 @@
       </profile-state>
     </entry>
   </component>
-  <component name="TerminalProjectNonSharedOptionsProvider">
-    <option name="startingDirectory" value="D:\Enterprise Development\Go-projects" />
-  </component>
 </project>
