@@ -11,6 +11,12 @@ build:
 	docker build --pull -t $(FULL_IMAGE_NAME) .
 	@echo --- Successfully built: $(FULL_IMAGE_NAME) ---
 
+scan: build
+	@echo --- Scanning Docker Image for HIGH/CRITICAL vulnerabilities using Trivy ---
+	@# Trivy scans only critical and high severity vulnerabilities
+	trivy image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
+	@echo --- Trivy scan completed ---
+
 run: stop build
 	@echo --- Running container on http://localhost:8080 ---
 	docker run -d --rm --name $(CONTAINER_NAME) -p 8080:8080 $(FULL_IMAGE_NAME)
@@ -66,6 +72,7 @@ info:
 	@echo    make open-all - Open all endpoints in browser
 	@echo    make logs     - Show container logs
 	@echo    make status   - Check container status
+	@echo    make scan     - Scan the built Docker image for vulnerabilities
 
 stop:
 	@echo --- Stopping container: $(CONTAINER_NAME) ---
@@ -104,4 +111,4 @@ deploy: run
 
 restart: stop run
 
-.PHONY: all build run stop clean test info logs status deploy open-all restart
+.PHONY: all scan build run stop clean test info logs status deploy open-all restart
