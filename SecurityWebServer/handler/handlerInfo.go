@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// InfoHandler - информация о сервере и endpoints
+// InfoHandler - server information and endpoints
 func InfoHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -62,6 +62,7 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
             <p><a href="/halloween" target="_blank">/halloween - Halloween Page</a> (HTML)</p>
             <p><a href="/api/halloween" target="_blank">/api/halloween - JSON API</a> (JSON)</p>
             <p><a href="/info" target="_blank">/info - This Page</a> (HTML)</p>
+            <p><a href="/greet?name=Test" target="_blank">/greet?name=... - VULNERABLE Greet</a> (XSS Target)</p>
         </div>
         
         <div class="endpoint">
@@ -80,12 +81,6 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
             <p><strong>Request Method:</strong> ` + r.Method + `</p>
             <p><strong>Request URL:</strong> ` + r.URL.String() + `</p>
         </div>
-
-        <div class="endpoint">
-            <h3>🚀 Quick Test:</h3>
-            <p>Try refreshing any page quickly to see rate limiting in action!</p>
-            <p><em>You should see "429 Too Many Requests" after 10 rapid requests.</em></p>
-        </div>
     </div>
 </body>
 </html>`
@@ -93,7 +88,5 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := fmt.Fprint(w, info)
 	if err != nil {
 		log.Printf("Error writing Info response: %v", err)
-		return
 	}
-	log.Printf("Info page accessed from %s", r.RemoteAddr)
 }

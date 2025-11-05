@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// HalloweenHandler - праздничная страница
+// HalloweenHandler - holiday page
 func HalloweenHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -67,8 +67,6 @@ func HalloweenHandler(w http.ResponseWriter, r *http.Request) {
         <p><strong>Protected by:</strong></p>
         <p>✅ Rate Limiting</p>
         <p>✅ Security Headers</p>
-        <p>✅ XSS Protection</p>
-        <p>✅ No-Sniff Protection</p>
         <p><small>Client IP: ` + r.RemoteAddr + `</small></p>
     </div>
 
@@ -76,6 +74,7 @@ func HalloweenHandler(w http.ResponseWriter, r *http.Request) {
         <a href="/">Health Check</a>
         <a href="/api/halloween">API</a>
         <a href="/info">Server Info</a>
+        <a href="/greet?name=Test">Vulnerable Greet</a>
     </div>
 
     <div style="margin-top: 30px;">
@@ -87,12 +86,10 @@ func HalloweenHandler(w http.ResponseWriter, r *http.Request) {
 	_, err := fmt.Fprint(w, html)
 	if err != nil {
 		log.Printf("Error writing Halloween response: %v", err)
-		return
 	}
-	log.Printf("Halloween page accessed from %s", r.RemoteAddr)
 }
 
-// HalloweenAPIHandler - JSON API для Halloween
+// HalloweenAPIHandler - JSON API for Halloween
 func HalloweenAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -104,19 +101,13 @@ func HalloweenAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"features": []string{
 			"rate_limiting",
 			"security_headers",
-			"nosniff_protection",
-			"xss_protection",
 		},
-		"treats_available": true,
-		"tricks_blocked":   true,
-		"timestamp":        time.Now().Format(time.RFC3339),
+		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
-	err := json.NewEncoder(w).Encode(response)
-	if err != nil {
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		log.Printf("Error encoding JSON response: %v", err)
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	log.Printf("Halloween API called from %s", r.RemoteAddr)
 }

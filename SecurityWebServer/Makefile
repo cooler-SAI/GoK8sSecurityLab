@@ -13,9 +13,21 @@ build:
 
 scan: build
 	@echo --- Scanning Docker Image for HIGH/CRITICAL vulnerabilities using Trivy ---
-	@# Trivy scans only critical and high severity vulnerabilities
-	trivy image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
+	@"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
 	@echo --- Trivy scan completed ---
+
+scan-fast: build
+	@echo --- Fast scan (vulnerabilities only, no secrets) ---
+	@"C:\Users\coole\scoop\shims\trivy.exe" image --scanners vuln --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
+
+scan-full: build
+	@echo --- Full security scan with secrets detection ---
+	@"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
+
+# Docker Scout как альтернатива
+scan-docker: build
+	@echo --- Scanning with Docker Scout ---
+	docker scout quickview $(FULL_IMAGE_NAME)
 
 run: stop build
 	@echo --- Running container on http://localhost:8080 ---
@@ -63,16 +75,19 @@ info:
 	@echo    Port: 8080
 	@echo.
 	@echo AVAILABLE COMMANDS:
-	@echo    make build    - Build Docker image
-	@echo    make run      - Build and run container
-	@echo    make test     - Run tests
-	@echo    make stop     - Stop container
-	@echo    make clean    - Stop and remove everything
-	@echo    make info     - Show this info
-	@echo    make open-all - Open all endpoints in browser
-	@echo    make logs     - Show container logs
-	@echo    make status   - Check container status
-	@echo    make scan     - Scan the built Docker image for vulnerabilities
+	@echo    make build      - Build Docker image
+	@echo    make run        - Build and run container
+	@echo    make test       - Run tests
+	@echo    make stop       - Stop container
+	@echo    make clean      - Stop and remove everything
+	@echo    make info       - Show this info
+	@echo    make open-all   - Open all endpoints in browser
+	@echo    make logs       - Show container logs
+	@echo    make status     - Check container status
+	@echo    make scan       - Security scan with Trivy
+	@echo    make scan-fast  - Fast vulnerability scan
+	@echo    make scan-full  - Full security scan
+	@echo    make scan-docker - Scan with Docker Scout
 
 stop:
 	@echo --- Stopping container: $(CONTAINER_NAME) ---
@@ -111,4 +126,4 @@ deploy: run
 
 restart: stop run
 
-.PHONY: all scan build run stop clean test info logs status deploy open-all restart
+.PHONY: all scan scan-fast scan-full scan-docker build run stop clean test info logs status deploy open-all restart

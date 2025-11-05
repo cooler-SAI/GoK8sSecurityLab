@@ -16,7 +16,7 @@ func main() {
 		port = "8080"
 	}
 
-	// Цепочки middleware для разных endpoints
+	// Middleware chains for different endpoints
 	healthChain := handler.RateLimit(
 		handler.SecureHeaders(
 			http.HandlerFunc(handler.HealthHandler),
@@ -41,11 +41,22 @@ func main() {
 		),
 	)
 
-	// Регистрация routes
+	// --- ADDED CHAIN FOR VULNERABLE GreetHandler ---
+	// This route is still protected by RateLimit and SecureHeaders,
+	// but the VulnerableGreetHandler itself is VULNERABLE to XSS.
+	greetChain := handler.RateLimit(
+		handler.SecureHeaders(
+			http.HandlerFunc(handler.SecureGreetHandler),
+		),
+	)
+
+	// Register routes
 	http.Handle("/", healthChain)
 	http.Handle("/halloween", halloweenChain)
 	http.Handle("/api/halloween", apiChain)
 	http.Handle("/info", infoChain)
+	// --- REGISTER VULNERABLE ROUTE ---
+	http.Handle("/greet", greetChain)
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%s", port),
@@ -62,6 +73,7 @@ func main() {
 	log.Printf("   🎃 Halloween Page:  http://localhost:%s/halloween", port)
 	log.Printf("   🔗 Halloween API:   http://localhost:%s/api/halloween", port)
 	log.Printf("   ℹ️  Server Info:     http://localhost:%s/info", port)
+	log.Printf("   ⚠️  VULNERABLE GREET:  http://localhost:%s/greet?name=YourName", port) // Updated for clarity
 	log.Printf("⚡ Rate Limiting: 10 requests/second")
 	log.Printf("🔒 Security headers enabled")
 

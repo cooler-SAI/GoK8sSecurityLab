@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+// --- RATE LIMITER IMPLEMENTATION ---
+
 // RateLimiter Simple structure for rate limiting
 type RateLimiter struct {
 	ips    map[string]time.Time
@@ -26,26 +28,35 @@ func (rl *RateLimiter) Allow(ip string) bool {
 	rl.mux.Lock()
 	defer rl.mux.Unlock()
 
-	now := time.Now()
+	// Window of 100ms means maximum 10 requests per second per IP
 	if last, exists := rl.ips[ip]; exists {
-		if now.Sub(last) < rl.window {
+		if time.Since(last) < rl.window {
 			return false
 		}
 	}
 
-	rl.ips[ip] = now
+	rl.ips[ip] = time.Now()
 	return true
 }
 
+// --- MIDDLEWARES ---
+
 // RateLimit middleware
 func RateLimit(next http.Handler) http.Handler {
+	// 100ms per request (10 requests per second)
 	limiter := NewRateLimiter(100 * time.Millisecond)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := r.RemoteAddr
 
 		if !limiter.Allow(ip) {
-			http.Error(w, "Too Many Requests", http.StatusTooManyRequests)
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusTooManyRequests) // HTTP 429
+			_, err := fmt.Fprintln(w, "429 Too Many Requests: Rate limit exceeded.")
+			if err != nil {
+				log.Printf("Error writing rate limit response: %v", err)
+				return
+			}
 			return
 		}
 
@@ -64,13 +75,12 @@ func SecureHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// HealthHandler - базовый health check
-func HealthHandler(w http.ResponseWriter, r *http.Request) {
+// HealthHandler - basic health check
+func HealthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
 	_, err := fmt.Fprintf(w, "Status: OK. Running securely in a container.\n")
 	if err != nil {
-		log.Printf("Error writing response: %v", err)
-		return
+		log.Printf("Error writing health response: %v", err)
 	}
-	log.Printf("Health check request received from %s", r.RemoteAddr)
 }
