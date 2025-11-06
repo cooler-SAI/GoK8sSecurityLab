@@ -93,9 +93,9 @@ func SecureGreetHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Execute template with data - html/template automatically escapes HTML characters
 	data := struct {
-		Name template.HTML
+		Name string
 	}{
-		Name: template.HTML(name),
+		Name: name,
 	}
 
 	if err := tmpl.Execute(w, data); err != nil {
