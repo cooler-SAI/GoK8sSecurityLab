@@ -41,12 +41,17 @@ func main() {
 		),
 	)
 
-	// --- ADDED CHAIN FOR VULNERABLE GreetHandler ---
-	// This route is still protected by RateLimit and SecureHeaders,
-	// but the VulnerableGreetHandler itself is VULNERABLE to XSS.
-	greetChain := handler.RateLimit(
+	// Secure greet endpoint
+	secureGreetChain := handler.RateLimit(
 		handler.SecureHeaders(
 			http.HandlerFunc(handler.SecureGreetHandler),
+		),
+	)
+
+	// Vulnerable greet endpoint (for demonstration)
+	vulnerableGreetChain := handler.RateLimit(
+		handler.SecureHeaders(
+			http.HandlerFunc(handler.VulnerableGreetHandler),
 		),
 	)
 
@@ -55,8 +60,10 @@ func main() {
 	http.Handle("/halloween", halloweenChain)
 	http.Handle("/api/halloween", apiChain)
 	http.Handle("/info", infoChain)
-	// --- REGISTER VULNERABLE ROUTE ---
-	http.Handle("/greet", greetChain)
+	// Secure greet endpoint
+	http.Handle("/greet", secureGreetChain)
+	// Vulnerable greet endpoint (for educational purposes)
+	http.Handle("/vulnerable-greet", vulnerableGreetChain)
 
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%s", port),
@@ -69,13 +76,15 @@ func main() {
 
 	log.Printf("🎃 Starting Secure Halloween Server on port %s", port)
 	log.Printf("📋 Available endpoints:")
-	log.Printf("   🌐 Health Check:    http://localhost:%s/", port)
-	log.Printf("   🎃 Halloween Page:  http://localhost:%s/halloween", port)
-	log.Printf("   🔗 Halloween API:   http://localhost:%s/api/halloween", port)
-	log.Printf("   ℹ️  Server Info:     http://localhost:%s/info", port)
-	log.Printf("   ⚠️  VULNERABLE GREET:  http://localhost:%s/greet?name=YourName", port) // Updated for clarity
+	log.Printf("   🌐 Health Check:        http://localhost:%s/", port)
+	log.Printf("   🎃 Halloween Page:      http://localhost:%s/halloween", port)
+	log.Printf("   🔗 Halloween API:       http://localhost:%s/api/halloween", port)
+	log.Printf("   ℹ️  Server Info:         http://localhost:%s/info", port)
+	log.Printf("   ✅ SECURE GREET:         http://localhost:%s/greet?name=YourName", port)
+	log.Printf("   ⚠️  VULNERABLE GREET:    http://localhost:%s/vulnerable-greet?name=YourName", port)
 	log.Printf("⚡ Rate Limiting: 10 requests/second")
 	log.Printf("🔒 Security headers enabled")
+	log.Printf("🛡️  XSS Protection: Secure handlers use html/template")
 
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("Error starting server: %v", err)

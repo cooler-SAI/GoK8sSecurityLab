@@ -41,7 +41,7 @@ func (rl *RateLimiter) Allow(ip string) bool {
 
 // --- MIDDLEWARES ---
 
-// RateLimit middleware
+// RateLimit middleware (EXPORTED - starts with capital letter)
 func RateLimit(next http.Handler) http.Handler {
 	// 100ms per request (10 requests per second)
 	limiter := NewRateLimiter(100 * time.Millisecond)
@@ -64,7 +64,7 @@ func RateLimit(next http.Handler) http.Handler {
 	})
 }
 
-// SecureHeaders middleware
+// SecureHeaders middleware (EXPORTED - starts with capital letter)
 func SecureHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")
@@ -75,7 +75,7 @@ func SecureHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// HealthHandler - basic health check
+// HealthHandler - basic health check (EXPORTED)
 func HealthHandler(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

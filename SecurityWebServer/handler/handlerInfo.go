@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// InfoHandler - server information and endpoints
+// InfoHandler - server information and endpoints (EXPORTED)
 func InfoHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -62,7 +62,7 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
             <p><a href="/halloween" target="_blank">/halloween - Halloween Page</a> (HTML)</p>
             <p><a href="/api/halloween" target="_blank">/api/halloween - JSON API</a> (JSON)</p>
             <p><a href="/info" target="_blank">/info - This Page</a> (HTML)</p>
-            <p><a href="/greet?name=Test" target="_blank">/greet?name=... - VULNERABLE Greet</a> (XSS Target)</p>
+            <p><a href="/greet?name=Test" target="_blank">/greet?name=... - SECURE Greet</a> (XSS Protected)</p>
         </div>
         
         <div class="endpoint">
@@ -72,6 +72,7 @@ func InfoHandler(w http.ResponseWriter, r *http.Request) {
             <p>✅ X-Frame-Options: DENY</p>
             <p>✅ X-XSS-Protection: 1; mode=block</p>
             <p>✅ Referrer-Policy: strict-origin-when-cross-origin</p>
+            <p>✅ HTML Template Auto-escaping</p>
         </div>
         
         <div class="endpoint">

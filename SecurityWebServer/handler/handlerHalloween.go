@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// HalloweenHandler - holiday page
+// HalloweenHandler - holiday page (EXPORTED)
 func HalloweenHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 
@@ -74,7 +74,7 @@ func HalloweenHandler(w http.ResponseWriter, r *http.Request) {
         <a href="/">Health Check</a>
         <a href="/api/halloween">API</a>
         <a href="/info">Server Info</a>
-        <a href="/greet?name=Test">Vulnerable Greet</a>
+        <a href="/greet?name=Test">Secure Greet</a>
     </div>
 
     <div style="margin-top: 30px;">
@@ -89,7 +89,7 @@ func HalloweenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HalloweenAPIHandler - JSON API for Halloween
+// HalloweenAPIHandler - JSON API for Halloween (EXPORTED)
 func HalloweenAPIHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
