@@ -24,7 +24,7 @@ scan-full: build
 	@echo --- Full security scan with secrets detection ---
 	@"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
 
-# Docker Scout как альтернатива
+# Docker Scout as an alternative
 scan-docker: build
 	@echo --- Scanning with Docker Scout ---
 	docker scout quickview $(FULL_IMAGE_NAME)

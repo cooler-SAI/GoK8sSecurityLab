@@ -1,30 +1,28 @@
 #!/bin/bash
 
-Отправляет 12 быстрых запросов на /halloween и выводит HTTP-статус.
-
-Ожидайте увидеть 200 OK, а затем 429 Too Many Requests.
+# Sends 12 fast requests to /halloween and outputs the HTTP status.
+#
+# Expect to see 200 OK, then 429 Too Many Requests.
 
 ENDPOINT="http://localhost:8080/halloween"
 REQUESTS=12
 
-echo "--- Запуск теста Rate Limiting: $REQUESTS запросов ---"
+echo "--- Starting Rate Limiting Test: $REQUESTS requests ---"
 
-Отправляем запросы в цикле
-
+# Sending requests in a loop
 for i in $(seq 1 $REQUESTS); do
 
-# shellcheck disable=SC2215
--s: бесшумный режим, -o /dev/null: игнорировать вывод тела, -w "%{http_code}": вывести только код состояния
+  # shellcheck disable=SC2215
+  # -s: silent mode, -o /dev/null: ignore body output, -w "%{http_code}": output only status code
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" $ENDPOINT)
 
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" $ENDPOINT)
-
-if [ "$STATUS" -eq 429 ]; then
-echo "Запрос №$i: $STATUS (TOO MANY REQUESTS) - УСПЕХ! ✅"
-elif [ "$STATUS" -eq 200 ]; then
-echo "Запрос №$i: $STATUS (OK)"
-else
-echo "Запрос №$i: $STATUS (Неожиданный статус)"
-fi
+  if [ "$STATUS" -eq 429 ]; then
+    echo "Request #$i: $STATUS (TOO MANY REQUESTS) - SUCCESS! ✅"
+  elif [ "$STATUS" -eq 200 ]; then
+    echo "Request #$i: $STATUS (OK)"
+  else
+    echo "Request #$i: $STATUS (Unexpected status)"
+  fi
 done
 
-echo "--- Тест завершен ---"
+echo "--- Test finished ---"

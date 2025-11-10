@@ -3,6 +3,7 @@ package handler
 import (
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -47,12 +48,17 @@ func RateLimit(next http.Handler) http.Handler {
 	limiter := NewRateLimiter(100 * time.Millisecond)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr // Fallback if SplitHostPort fails
+		}
+		ip := host // Use only IP for Rate Limiting!
 
 		if !limiter.Allow(ip) {
+			w.Header().Set("Retry-After", "1")
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusTooManyRequests) // HTTP 429
-			_, err := fmt.Fprintln(w, "429 Too Many Requests: Rate limit exceeded.")
+			_, err := fmt.Fprintln(w, "429 Too Many Requests: Rate limit exceeded. Please try again in 1 second.")
 			if err != nil {
 				log.Printf("Error writing rate limit response: %v", err)
 				return
