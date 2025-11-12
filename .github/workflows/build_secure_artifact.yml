@@ -1,0 +1,88 @@
+# Workflow name displayed in GitHub Actions UI
+name: 🛡️ Secure Artifact Build & Sign (Trivy + Cosign)
+
+# Triggers: run on every push to 'main' and on Pull Request
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# Permissions needed for GHCR access and Keyless Signing (OIDC)
+permissions:
+  contents: read 
+  packages: write 
+  id-token: write # CRITICAL for Cosign Keyless: obtaining OIDC ID Token
+  security-events: write # Required for uploading Trivy reports to the Security tab
+
+# Global Environment Variables
+env:
+  REGISTRY: ghcr.io
+  # IMPORTANT: The name of your Docker image
+  IMAGE_NAME: go-secure-server-test 
+  
+jobs:
+  build_and_sign:
+    name: Build, Scan & Sign
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository Code
+        uses: actions/checkout@v4
+        
+      # 1. Docker Login to GitHub Container Registry (GHCR)
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Determine the full image name and tag (using commit SHA)
+      - name: Set up Image Tag
+        id: image_tag
+        run: |
+          IMAGE_TAG=${{ env.REGISTRY }}/${{ github.repository }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      # 3. Build and Push the Docker Image
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.image_tag.outputs.IMAGE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 4. Vulnerability Check with Trivy (The Security Gate)
+      - name: 🚨 Trivy Scan (Enforce Policy)
+        uses: aquasecurity/trivy-action@7b7aa264d83dc58691451798b4d117d53d21edfe
+        with:
+          image-ref: ${{ steps.image_tag.outputs.IMAGE_TAG }}
+          # CRITICAL: Exit code 1 (FAIL) on CRITICAL or HIGH vulnerabilities.
+          # This implements our "Fail Fast" policy.
+          exit-code: '1' 
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          
+      # Upload Trivy results to the GitHub Security Tab
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always() 
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      # 5. Set up Cosign
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        
+      # 6. Sign the image (only runs if Trivy scan was successful)
+      - name: ✍️ Sign Container Image (Cosign Keyless)
+        uses: sigstore/actions/sign-container@v1
+        with:
+          image: ${{ steps.image_tag.outputs.IMAGE_TAG }}
+          # 'yes: true' confirms the use of keyless signing
+          yes: true
