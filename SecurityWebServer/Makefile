@@ -125,5 +125,147 @@ deploy: run
 	@echo Use 'make open-all' to open all links in browser
 
 restart: stop run
+# ============================================================================
+# KUBERNETES TARGETS
+# ============================================================================
 
-.PHONY: all scan scan-fast scan-full scan-docker build run stop clean test info logs status deploy open-all restart
+K8S_NAMESPACE := go-security-lab
+KUBE_CONTEXT := docker-desktop
+
+# K8s check
+k8s-check:
+	@echo --- Checking Kubernetes Access ---
+	kubectl config use-context $(KUBE_CONTEXT)
+	kubectl cluster-info
+	@echo --- Kubernetes is ready! ---
+
+# Deploy to K8s
+k8s-deploy: build k8s-check
+	@echo --- Deploying to Docker Desktop Kubernetes ---
+	kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
+	kubectl apply -f k8s/ -n $(K8S_NAMESPACE)
+	@echo --- Deployment completed! ---
+
+# Port-forward for access
+k8s-access:
+	@echo --- Starting Port Forward ---
+	@echo "🎃 Your Go Secure Server is now in K8s!"
+	@echo ""
+	@echo "📡 AVAILABLE ENDPOINTS:"
+	@echo "   🔹 Health Check:    http://localhost:8080/"
+	@echo "   🔹 Halloween Page:  http://localhost:8080/halloween"
+	@echo "   🔹 Halloween API:   http://localhost:8080/api/halloween"
+	@echo "   🔹 Server Info:     http://localhost:8080/info"
+	@echo ""
+	@echo "⚡ SECURITY FEATURES (now in K8s!):"
+	@echo "   ✅ Rate Limiting (10 requests/second)"
+	@echo "   ✅ Security Headers"
+	@echo "   ✅ K8s Security Context"
+	@echo "   ✅ Non-root user execution"
+	@echo ""
+	@echo "Press Ctrl+C to stop port-forwarding"
+	kubectl port-forward svc/go-secure-service 8080:80 -n $(K8S_NAMESPACE)
+
+# Full deploy with port-forward
+k8s-run: k8s-deploy
+	@echo --- Waiting for pods to be ready ---
+	kubectl wait --for=condition=ready pod -l app=go-secure-server -n $(K8S_NAMESPACE) --timeout=120s
+	@echo --- Starting automatic port-forward ---
+	$(MAKE) k8s-access
+
+# K8s logs
+k8s-logs:
+	@echo --- K8s Container Logs ---
+	kubectl logs -l app=go-secure-server -n $(K8S_NAMESPACE) --tail=50 -f
+
+# K8s state
+k8s-status:
+	@echo --- Kubernetes Status ---
+	@echo "📊 Namespace: $(K8S_NAMESPACE)"
+	kubectl get pods,svc,deploy -n $(K8S_NAMESPACE)
+
+# K8s clean
+k8s-clean:
+	@echo --- Cleaning Kubernetes Resources ---
+	kubectl delete -f k8s/ -n $(K8S_NAMESPACE) --ignore-not-found=true
+	kubectl delete namespace $(K8S_NAMESPACE) --ignore-not-found=true
+	@echo --- K8s cleanup completed ---
+
+# Renew deployment (after make build)
+k8s-update: build
+	@echo --- Updating K8s Deployment ---
+	kubectl rollout restart deployment/go-secure-server -n $(K8S_NAMESPACE)
+	@echo --- Update initiated. Check status with: make k8s-status ---
+
+# Security scan в K8s
+k8s-scan: build
+	@echo --- Comprehensive Security Scan ---
+	@echo "🔍 Docker Image Scan:"
+	@"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
+	@echo ""
+	@echo "🛡️ K8s Security Check:"
+	kubectl apply -f k8s/ -n $(K8S_NAMESPACE) --dry-run=server --validate=true
+
+# Full security pipeline
+security-pipeline: scan k8s-scan k8s-deploy
+	@echo "🎉 SECURITY PIPELINE COMPLETED!"
+	@echo "✅ Docker image built and scanned"
+	@echo "✅ K8s manifests validated"
+	@echo "✅ Application deployed to Kubernetes"
+	@echo ""
+	@echo "Next: make k8s-run to access your secured app!"
+
+# K8s info
+k8s-info:
+	@echo.
+	@echo "🚀 KUBERNETES DEPLOYMENT INFO:"
+	@echo "   Project:    $(PROJECT_NAME)"
+	@echo "   Image:      $(FULL_IMAGE_NAME)"
+	@echo "   Namespace:  $(K8S_NAMESPACE)"
+	@echo "   Context:    $(KUBE_CONTEXT)"
+	@echo.
+	@echo "📋 AVAILABLE K8s COMMANDS:"
+	@echo "   make k8s-run        - Full deploy + auto port-forward"
+	@echo "   make k8s-deploy     - Deploy to K8s only"
+	@echo "   make k8s-access     - Start port-forward"
+	@echo "   make k8s-status     - Check K8s status"
+	@echo "   make k8s-logs       - Show K8s logs"
+	@echo "   make k8s-update     - Update deployment"
+	@echo "   make k8s-clean      - Clean K8s resources"
+	@echo "   make k8s-scan       - Security scan in K8s"
+	@echo "   make security-pipeline - Full security workflow"
+
+# Обновляем info target чтобы включить K8s команды
+info:
+	@echo.
+	@echo "PROJECT INFORMATION:"
+	@echo "   Image:      $(FULL_IMAGE_NAME)"
+	@echo "   Container:  $(CONTAINER_NAME)"
+	@echo "   Port:       8080"
+	@echo "   K8s Namespace: $(K8S_NAMESPACE)"
+	@echo.
+	@echo "🦀 DOCKER COMMANDS:"
+	@echo "   make build      - Build Docker image"
+	@echo "   make run        - Build and run container"
+	@echo "   make test       - Run tests"
+	@echo "   make stop       - Stop container"
+	@echo "   make clean      - Stop and remove everything"
+	@echo "   make logs       - Show container logs"
+	@echo "   make status     - Check container status"
+	@echo "   make scan       - Security scan with Trivy"
+	@echo "   make scan-fast  - Fast vulnerability scan"
+	@echo "   make scan-full  - Full security scan"
+	@echo "   make scan-docker - Scan with Docker Scout"
+	@echo "   make open-all   - Open all endpoints in browser"
+	@echo "   make deploy     - Run and show quick access"
+	@echo "   make restart    - Stop and run again"
+	@echo.
+	@echo "🚀 KUBERNETES COMMANDS:"
+	@echo "   make k8s-run    - Full K8s deploy + access"
+	@echo "   make k8s-deploy - Deploy to K8s"
+	@echo "   make k8s-status - Check K8s status"
+	@echo "   make k8s-logs   - Show K8s logs"
+	@echo "   make k8s-clean  - Clean K8s resources"
+	@echo "   make k8s-info   - Show K8s help"
+
+.PHONY: k8s-check k8s-deploy k8s-access k8s-run k8s-logs k8s-status k8s-clean k8s-update k8s-scan security-pipeline k8s-info
