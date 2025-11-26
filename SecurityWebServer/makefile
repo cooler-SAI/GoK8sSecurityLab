@@ -235,7 +235,7 @@ k8s-info:
 	@echo "   make k8s-scan       - Security scan in K8s"
 	@echo "   make security-pipeline - Full security workflow"
 
-# Обновляем info target чтобы включить K8s команды
+# Update info target for enable K8s without
 info:
 	@echo.
 	@echo "PROJECT INFORMATION:"
