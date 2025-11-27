@@ -6,6 +6,8 @@
       <w>buildx</w>
       <w>codeql</w>
       <w>coole</w>
+      <w>falco</w>
+      <w>falcosidekick</w>
       <w>ghcr</w>
       <w>nosniff</w>
       <w>sigstore</w>
