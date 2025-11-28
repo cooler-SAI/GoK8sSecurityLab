@@ -6,13 +6,12 @@ CONTAINER_NAME := go-secure-server-test
 K8S_NAMESPACE := go-security-lab
 KUBE_CONTEXT := docker-desktop
 FALCO_NAMESPACE := falco
-FALCO_VERSION := 3.5.4
 
 # ============================================================================
 # MAIN TARGETS
 # ============================================================================
 
-all: security-full
+all: security-quick
 
 build:
 	@echo --- Building Docker Image: $(FULL_IMAGE_NAME) ---
@@ -110,7 +109,7 @@ scan-docker: build
 	docker scout quickview $(FULL_IMAGE_NAME)
 
 # ============================================================================
-# FALCO RUNTIME SECURITY TARGETS (IMPROVED)
+# FALCO RUNTIME SECURITY TARGETS (ОБНОВЛЕННЫЕ)
 # ============================================================================
 
 falco-check:
@@ -131,35 +130,77 @@ install-helm-choco:
 	choco install kubernetes-helm -y
 	@echo ✓ Helm installed via Chocolatey
 
-falco-install: falco-check k8s-check
-	@echo --- Installing Falco Runtime Security ---
-	@echo "🔒 Deploying Falco for real-time security monitoring"
+helm-cleanup:
+	@echo --- Cleaning up stuck Helm operations ---
+	@-helm rollback falco -n $(FALCO_NAMESPACE) 0 --cleanup-on-fail 2>nul || echo "No rollback needed"
+	@-helm delete falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo "No release to delete"
+	@-kubectl delete secrets -n $(FALCO_NAMESPACE) -l "owner=helm" --ignore-not-found=true
+	@echo "✅ Helm cleanup completed"
+
+falco-clean-complete:
+	@echo --- Complete Falco Cleanup ---
+	@echo "🧹 Removing all Falco resources..."
+	-helm uninstall falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo "No helm release found"
+	-kubectl delete namespace $(FALCO_NAMESPACE) --ignore-not-found=true --wait --timeout=60s
+	-kubectl delete role,rolebinding,serviceaccount,configmap,secret,daemonset,service,deployment -l app=falco -A --ignore-not-found=true --wait
+	-kubectl delete role,rolebinding,serviceaccount,configmap,secret,daemonset,service,deployment -l app.kubernetes.io/name=falco -A --ignore-not-found=true --wait
+	@echo "✅ Complete cleanup finished"
+	@echo "Wait 30 seconds for resources to be fully removed..."
+	@timeout /t 30 /nobreak >nul
+
+falco-install-simple: falco-check k8s-check
+	@echo --- Simple Falco Installation ---
 	helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 	helm repo update
-	@echo "📦 Installing Falco version $(FALCO_VERSION)..."
+	@echo "📦 Installing Falco (simple version)..."
 	helm upgrade --install falco falcosecurity/falco \
 		--namespace $(FALCO_NAMESPACE) \
 		--create-namespace \
-		--version $(FALCO_VERSION) \
+		--wait
+	@echo "✅ Falco installed successfully"
+
+falco-install-no-wait: falco-check k8s-check helm-cleanup
+	@echo --- Installing Falco without wait ---
+	helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
+	helm repo update
+	@echo "📦 Installing Falco (without wait flag)..."
+	helm upgrade --install falco falcosecurity/falco \
+		--namespace $(FALCO_NAMESPACE) \
+		--create-namespace \
 		--set falcosidekick.enabled=true \
 		--set falcosidekick.webui.enabled=true \
-		--set tty=true \
-		--wait
-	@echo --- Waiting for Falco pods to be ready ---
-	@kubectl wait --for=condition=ready pod -l app=falco -n $(FALCO_NAMESPACE) --timeout=180s
-	@echo.
-	@echo "🎉 FALCO SUCCESSFULLY INSTALLED!"
-	@echo "   📊 Web UI: http://localhost:2802"
-	@echo "   📋 Logs:   make falco-logs"
-	@echo "   🧪 Test:   make falco-test"
+		--set tty=true
+	@echo "⌛ Waiting separately for pods..."
+	@timeout /t 30 /nobreak >nul
+	@kubectl wait --for=condition=ready pod -l app=falco -n $(FALCO_NAMESPACE) --timeout=120s
+	@echo "✅ Falco installation completed!"
 
-# Альтернативная установка без Helm (если проблемы с Helm)
-falco-install-direct: k8s-check
-	@echo --- Installing Falco using direct manifests ---
-	kubectl create namespace $(FALCO_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
-	kubectl apply -f https://raw.githubusercontent.com/falcosecurity/charts/master/falco/templates/namespace.yaml
-	@echo "⚠️  For direct installation, see: https://falco.org/docs/getting-started/installation/"
-	@echo "📖 Or use: kubectl apply -f https://falco.org/helm/install"
+falco-install: falco-install-no-wait
+	@echo "🎉 Falco installation completed!"
+
+falco-install-clean: falco-clean-complete falco-install-simple
+	@echo "🎉 Fresh Falco installation completed!"
+
+falco-logs:
+	@echo --- Falco Security Events ---
+	kubectl logs -l app=falco -n $(FALCO_NAMESPACE) -c falco --tail=50 -f
+
+falco-test:
+	@echo --- Testing Falco Detection ---
+	@echo "🧪 Generating test security event..."
+	kubectl run --rm -i --tty falco-test --image=alpine --restart=Never -- sh -c "cat /etc/shadow" || true
+	@echo "📋 Check logs with: make falco-logs"
+
+falco-status:
+	@echo --- Falco Status ---
+	kubectl get pods,svc,daemonset -n $(FALCO_NAMESPACE)
+
+falco-clean:
+	@echo --- Removing Falco ---
+	helm uninstall falco -n $(FALCO_NAMESPACE) --wait
+	kubectl delete namespace $(FALCO_NAMESPACE) --ignore-not-found=true
+	@echo "✅ Falco removed"
+
 # ============================================================================
 # KUBERNETES TARGETS
 # ============================================================================
@@ -240,7 +281,17 @@ k8s-scan: build
 # COMPREHENSIVE SECURITY PIPELINES
 # ============================================================================
 
-security-pipeline: scan falco-install k8s-deploy
+security-quick: build k8s-deploy
+	@echo.
+	@echo "🎉 QUICK SECURITY DEPLOYMENT COMPLETED!"
+	@echo "✅ Docker image built"
+	@echo "✅ K8s application deployed"
+	@echo "✅ Basic security context applied"
+	@echo.
+	@echo "🔍 For full security stack run: make security-full"
+	@echo "🚀 Quick access: make k8s-access"
+
+security-pipeline: scan falco-install-simple k8s-deploy
 	@echo.
 	@echo "🎉 SECURITY PIPELINE COMPLETED!"
 	@echo "✅ Docker image built and scanned"
@@ -250,22 +301,26 @@ security-pipeline: scan falco-install k8s-deploy
 	@echo.
 	@echo "🔍 NEXT STEPS:"
 	@echo "  make k8s-access     - Access your secured application"
-	@echo "  make falco-ui       - Monitor security events"
+	@echo "  make falco-logs     - Monitor security events"
 	@echo "  make falco-test     - Test Falco detection"
 
-security-full: scan falco-install k8s-deploy falco-ui
-	@echo --- Complete Security Stack Activated ---
+security-full: scan falco-install-clean k8s-deploy
+	@echo.
+	@echo "🎉 FULL SECURITY STACK DEPLOYED!"
+	@echo "✅ Docker image built and scanned"
+	@echo "✅ Falco runtime security installed (clean install)"
+	@echo "✅ K8s application deployed with security context"
+	@echo.
+	@echo "🛡️  SECURITY MONITORING ACTIVE!"
+	@echo "🔍 Run: make falco-logs    - View security events"
+	@echo "🚀 Run: make k8s-access    - Access your application"
 
-
-falco-ui:
 security-scan: scan k8s-scan
 	@echo --- Security Scanning Complete ---
 
 security-clean: k8s-clean falco-clean clean
 	@echo --- Complete Security Environment Cleanup ---
 
-
-falco-clean:
 security-status:
 	@echo --- Comprehensive Security Status ---
 	@echo.
@@ -280,7 +335,6 @@ security-status:
 	@echo.
 	@echo "📊 SECURITY MONITORING:"
 	@echo "   make falco-logs    - View security events"
-	@echo "   make falco-ui      - Web dashboard"
 	@echo "   make k8s-logs      - Application logs"
 
 # ============================================================================
@@ -299,15 +353,16 @@ info:
 	@echo "   Falco Namespace: $(FALCO_NAMESPACE)"
 	@echo.
 	@echo "🚀 QUICK START:"
-	@echo "   make all              - Full security deployment"
+	@echo "   make all              - Quick security deployment"
 	@echo "   make security-full    - Complete security stack"
 	@echo "   make run              - Quick Docker run"
 	@echo.
 	@echo "🔒 SECURITY COMMANDS:"
 	@echo "   make scan             - Trivy vulnerability scan"
 	@echo "   make falco-install    - Install runtime security"
+	@echo "   make falco-install-simple - Simple Falco install"
 	@echo "   make falco-test       - Test security detection"
-	@echo "   make falco-ui         - Security dashboard"
+	@echo "   make falco-logs       - Security monitoring"
 	@echo "   make security-status  - Overall security status"
 	@echo.
 	@echo "🛠️  DEVELOPMENT:"
@@ -335,9 +390,11 @@ help: info
 
 .PHONY: all build run test stop clean logs status open-all deploy restart \
         scan scan-fast scan-full scan-docker \
-        falco-check falco-install falco-status falco-logs falco-events \
-        falco-test falco-ui falco-monitor falco-clean falco-rules \
+        falco-check install-helm install-helm-choco helm-cleanup \
+        falco-clean-complete falco-install-simple falco-install-no-wait \
+        falco-install falco-install-clean falco-logs falco-test \
+        falco-status falco-clean \
         k8s-check k8s-deploy k8s-access k8s-run k8s-logs k8s-status \
         k8s-clean k8s-update k8s-scan \
-        security-pipeline security-full security-scan security-clean \
-        security-status info help
+        security-quick security-pipeline security-full security-scan \
+        security-clean security-status info help
