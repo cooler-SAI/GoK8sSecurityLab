@@ -9,8 +9,10 @@
       <w>falco</w>
       <w>falcosidekick</w>
       <w>ghcr</w>
+      <w>hmmss</w>
       <w>nosniff</w>
       <w>sigstore</w>
+      <w>whoami</w>
     </words>
   </dictionary>
 </component>

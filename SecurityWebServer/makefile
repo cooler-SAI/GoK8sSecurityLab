@@ -109,7 +109,7 @@ scan-docker: build
 	docker scout quickview $(FULL_IMAGE_NAME)
 
 # ============================================================================
-# FALCO RUNTIME SECURITY TARGETS (ОБНОВЛЕННЫЕ)
+# FALCO RUNTIME SECURITY TARGETS
 # ============================================================================
 
 falco-check:
@@ -278,6 +278,139 @@ k8s-scan: build
 	@echo "✅ Kubernetes security scan completed"
 
 # ============================================================================
+# NEW SECURITY & MONITORING TARGETS
+# ============================================================================
+
+security-dashboard:
+	@echo --- Launching Security Dashboard ---
+	@echo "📊 SECURITY DASHBOARD - $(shell date)"
+	@echo "=========================================="
+	@echo "🔍 Image: $(FULL_IMAGE_NAME)"
+	@echo "🐳 Container: $(CONTAINER_NAME)"
+	@echo "☸️  K8s Namespace: $(K8S_NAMESPACE)"
+	@echo "🛡️  Falco Namespace: $(FALCO_NAMESPACE)"
+	@echo.
+	@echo "⚡ REAL-TIME STATUS:"
+	@-docker images | findstr "$(IMAGE_NAME)" >nul && echo "✅ Docker Image: BUILT" || echo "❌ Docker Image: NOT BUILT"
+	@-docker ps | findstr "$(CONTAINER_NAME)" >nul && echo "✅ Container: RUNNING" || echo "❌ Container: STOPPED"
+	@-kubectl get ns $(K8S_NAMESPACE) >nul 2>&1 && echo "✅ K8s App: DEPLOYED" || echo "❌ K8s App: NOT DEPLOYED"
+	@-kubectl get ns $(FALCO_NAMESPACE) >nul 2>&1 && echo "✅ Falco: INSTALLED" || echo "❌ Falco: NOT INSTALLED"
+	@echo.
+	@echo "🎯 QUICK ACTIONS:"
+	@echo "   make security-quick    - Fast deployment"
+	@echo "   make security-full     - Full security stack"
+	@echo "   make security-scan     - Run security scans"
+	@echo "   make security-clean    - Clean everything"
+
+vulnerability-scan: build
+	@echo --- Comprehensive Vulnerability Assessment ---
+	@echo "🔍 Scanning $(FULL_IMAGE_NAME) for vulnerabilities..."
+	@"C:\Users\coole\scoop\shims\trivy.exe" image --format table --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
+	@echo.
+	@echo "📦 Scanning dependencies..."
+	@"C:\Users\coole\scoop\shims\trivy.exe" image --format table --scanners vuln --severity MEDIUM,HIGH,CRITICAL $(FULL_IMAGE_NAME)
+	@echo.
+	@echo "✅ Vulnerability scan completed"
+
+runtime-security-test:
+	@echo --- Runtime Security Tests ---
+	@echo "🧪 Testing Falco detection capabilities..."
+	@echo "1. Testing privilege escalation detection..."
+	@-kubectl run --rm -i --tty test-privilege --image=alpine --restart=Never -- sh -c "whoami" || true
+	@timeout /t 2 /nobreak >nul
+	@echo "2. Testing sensitive file access..."
+	@-kubectl run --rm -i --tty test-file-access --image=alpine --restart=Never -- sh -c "ls -la /etc/passwd" || true
+	@timeout /t 2 /nobreak >nul
+	@echo "3. Testing network reconnaissance..."
+	@-kubectl run --rm -i --tty test-network --image=alpine --restart=Never -- sh -c "ping -c 1 google.com" || true
+	@echo.
+	@echo "📋 Check security events with: make falco-logs"
+
+k8s-security-audit:
+	@echo --- Kubernetes Security Audit ---
+	@echo "🔒 Checking K8s security configuration..."
+	@echo.
+	@echo "📋 Namespace Security:"
+	@-kubectl get namespace $(K8S_NAMESPACE) -o yaml | findstr "labels" || echo "No labels found"
+	@echo.
+	@echo "🛡️ Pod Security Context:"
+	@-kubectl get pod -l app=go-secure-server -n $(K8S_NAMESPACE) -o jsonpath='{.items[*].spec.securityContext}' 2>/dev/null && echo || echo "No security context"
+	@echo.
+	@echo "🔐 Service Account:"
+	@-kubectl get pod -l app=go-secure-server -n $(K8S_NAMESPACE) -o jsonpath='{.items[*].spec.serviceAccount}' 2>/dev/null && echo || echo "Default service account"
+	@echo.
+	@echo "✅ K8s security audit completed"
+
+quick-debug:
+	@echo --- Quick Debug Information ---
+	@echo "🐳 Docker:"
+	@-docker version --format 'Docker Version: {{.Server.Version}}' 2>/dev/null || echo "Docker not available"
+	@echo.
+	@echo "☸️ Kubernetes:"
+	@-kubectl version --short 2>/dev/null | findstr "Server" || echo "Kubernetes not available"
+	@echo.
+	@echo "📦 Helm:"
+	@-helm version --short 2>/dev/null || echo "Helm not available"
+	@echo.
+	@echo "🛡️ Falco:"
+	@-kubectl get pods -n $(FALCO_NAMESPACE) 2>/dev/null | findstr "falco" && echo "Falco: RUNNING" || echo "Falco: NOT RUNNING"
+	@echo.
+	@echo "🚀 Application:"
+	@-kubectl get pods -n $(K8S_NAMESPACE) 2>/dev/null | findstr "go-secure-server" && echo "App: RUNNING" || echo "App: NOT RUNNING"
+
+performance-test:
+	@echo --- Performance & Load Testing ---
+	@echo "🚀 Testing application performance..."
+	@echo "1. Basic health check response time:"
+	@-powershell -Command "Measure-Command { curl -s -o $null http://localhost:8080/ } | Select-Object TotalMilliseconds" 2>nul || echo "Health check failed or server not running"
+	@echo "2. API endpoint performance:"
+	@-powershell -Command "Measure-Command { curl -s -o $null http://localhost:8080/api/halloween } | Select-Object TotalMilliseconds" 2>nul || echo "API check failed or server not running"
+	@echo "3. Rate limiting test (5 requests):"
+	@for /l %%i in (1,1,5) do @(curl -s -w "Request %%i: %%{http_code}\n" -o nul http://localhost:8080/api/halloween 2>nul && timeout /t 1 /nobreak >nul)
+	@echo "✅ Performance test completed"
+
+backup-configs:
+	@echo --- Backup Configuration Files ---
+	@set BACKUP_DIR=backups\$(shell powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'")
+	@mkdir "%BACKUP_DIR%" 2>nul
+	@copy Dockerfile "%BACKUP_DIR%\" >nul && echo "✅ Dockerfile backed up
+	@if exist k8s\*.yaml (copy k8s\*.yaml "%BACKUP_DIR%\" >nul && echo "✅ K8s manifests backed up") else (echo "❌ K8s manifests not found)
+	@copy Makefile "%BACKUP_DIR%\" >nul && echo "✅ Makefile backed up
+	@if exist go.mod (copy go.mod "%BACKUP_DIR%\" >nul && echo "✅ Go mod backed up") else (echo "❌ go.mod not found)
+	@echo "📦 Backup created in: %BACKUP_DIR%"
+
+export-logs:
+	@echo --- Exporting Logs for Analysis ---
+	@set LOG_DIR=logs\$(shell powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'")
+	@mkdir "%LOG_DIR%" 2>nul
+	@echo "📋 Exporting Docker logs..."
+	@-docker logs $(CONTAINER_NAME) > "%LOG_DIR%\docker.log" 2>&1 || echo "No Docker logs"
+	@echo "📋 Exporting K8s application logs..."
+	@-kubectl logs -l app=go-secure-server -n $(K8S_NAMESPACE) > "%LOG_DIR%\k8s-app.log" 2>&1 || echo "No K8s logs"
+	@echo "📋 Exporting Falco security events..."
+	@-kubectl logs -l app=falco -n $(FALCO_NAMESPACE) --tail=100 > "%LOG_DIR%\falco-security.log" 2>&1 || echo "No Falco logs"
+	@echo "📦 Logs exported to: %LOG_DIR%"
+
+security-report:
+	@echo --- Generating Security Report ---
+	@set REPORT_FILE=security-report-$(shell powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'").txt
+	@echo "🛡️ SECURITY REPORT - $(shell date)" > "%REPORT_FILE%"
+	@echo "=================================" >> "%REPORT_FILE%"
+	@echo. >> "%REPORT_FILE%"
+	@echo "Docker Image: $(FULL_IMAGE_NAME)" >> "%REPORT_FILE%"
+	@echo "Generated: $(shell date)" >> "%REPORT_FILE%"
+	@echo. >> "%REPORT_FILE%"
+	@echo "VULNERABILITY SCAN:" >> "%REPORT_FILE%"
+	@-"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME) >> "%REPORT_FILE%" 2>&1 || echo "Scan failed" >> "%REPORT_FILE%"
+	@echo. >> "%REPORT_FILE%"
+	@echo "KUBERNETES STATUS:" >> "%REPORT_FILE%"
+	@-kubectl get pods,svc -n $(K8S_NAMESPACE) >> "%REPORT_FILE%" 2>&1
+	@echo. >> "%REPORT_FILE%"
+	@echo "FALCO STATUS:" >> "%REPORT_FILE%"
+	@-kubectl get pods -n $(FALCO_NAMESPACE) >> "%REPORT_FILE%" 2>&1
+	@echo "📊 Security report saved to: %REPORT_FILE%"
+
+# ============================================================================
 # COMPREHENSIVE SECURITY PIPELINES
 # ============================================================================
 
@@ -358,23 +491,22 @@ info:
 	@echo "   make run              - Quick Docker run"
 	@echo.
 	@echo "🔒 SECURITY COMMANDS:"
-	@echo "   make scan             - Trivy vulnerability scan"
-	@echo "   make falco-install    - Install runtime security"
-	@echo "   make falco-install-simple - Simple Falco install"
-	@echo "   make falco-test       - Test security detection"
-	@echo "   make falco-logs       - Security monitoring"
-	@echo "   make security-status  - Overall security status"
+	@echo "   make security-dashboard - Security status dashboard"
+	@echo "   make vulnerability-scan - Comprehensive vulnerability scan"
+	@echo "   make runtime-security-test - Test Falco detection"
+	@echo "   make k8s-security-audit - K8s security audit"
+	@echo "   make security-report   - Generate security report"
 	@echo.
 	@echo "🛠️  DEVELOPMENT:"
 	@echo "   make build            - Build Docker image"
 	@echo "   make test             - Run tests"
 	@echo "   make k8s-deploy       - Deploy to Kubernetes"
-	@echo "   make k8s-update       - Update deployment"
+	@echo "   make performance-test - Load and performance testing"
 	@echo.
 	@echo "📊 MONITORING:"
-	@echo "   make falco-logs       - Security events"
-	@echo "   make k8s-logs         - Application logs"
-	@echo "   make k8s-status       - K8s status"
+	@echo "   make quick-debug      - System status check"
+	@echo "   make export-logs      - Export all logs for analysis"
+	@echo "   make backup-configs   - Backup configuration files"
 	@echo.
 	@echo "🧹 CLEANUP:"
 	@echo "   make clean            - Clean Docker resources"
@@ -397,4 +529,7 @@ help: info
         k8s-check k8s-deploy k8s-access k8s-run k8s-logs k8s-status \
         k8s-clean k8s-update k8s-scan \
         security-quick security-pipeline security-full security-scan \
-        security-clean security-status info help
+        security-clean security-status info help \
+        security-dashboard vulnerability-scan runtime-security-test \
+        k8s-security-audit quick-debug performance-test backup-configs \
+        export-logs security-report
