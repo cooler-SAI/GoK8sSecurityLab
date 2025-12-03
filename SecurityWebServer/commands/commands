@@ -1,0 +1,43 @@
+# 1. Security Dashboard - run first for system overview
+make security-dashboard
+
+# 2. Full security stack - main deployment pipeline
+make security-full
+
+# 3. Vulnerability scanning - container image security check
+make vulnerability-scan
+
+# 4. Security testing - test Falco attack detection
+make runtime-security-test
+
+# 5. Kubernetes audit - check K8s security configuration
+make k8s-security-audit
+
+# 6. Quick diagnostics - check status of all components
+make quick-debug
+
+# 7. All commands - list all available commands
+make info
+
+# ADDITIONAL USEFUL COMMANDS:
+
+# Quick deployment
+make security-quick
+
+# Build and run locally
+make build
+make run
+
+# Deploy to Kubernetes
+make k8s-deploy
+make k8s-access
+
+# Security monitoring
+make falco-logs
+make falco-test
+
+# Performance testing
+make performance-test
+
+# Cleanup
+make security-clean
