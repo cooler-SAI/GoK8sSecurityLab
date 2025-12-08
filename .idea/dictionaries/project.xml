@@ -10,7 +10,11 @@
       <w>falcosidekick</w>
       <w>ghcr</w>
       <w>hmmss</w>
+      <w>misconfig</w>
+      <w>netpol</w>
+      <w>newfile</w>
       <w>nosniff</w>
+      <w>nslookup</w>
       <w>sigstore</w>
       <w>whoami</w>
     </words>

@@ -6,9 +6,11 @@ CONTAINER_NAME := go-secure-server-test
 K8S_NAMESPACE := go-security-lab
 KUBE_CONTEXT := docker-desktop
 FALCO_NAMESPACE := falco
+TRIVY_BIN := "C:\Users\coole\scoop\shims\trivy.exe"
+NETPOL_FILE := k8s/network-policy.yaml
 
 # ============================================================================
-# MAIN TARGETS
+# MAIN TARGETS (Local Docker Management)
 # ============================================================================
 
 all: security-quick
@@ -27,17 +29,6 @@ run: stop build
 	@echo   #          SECURE HALLOWEEN SERVER STARTED           #
 	@echo   #######################################################
 	@echo.
-	@echo   *** AVAILABLE ENDPOINTS ***
-	@echo   [1] Health Check:    http://localhost:8080/
-	@echo   [2] Halloween Page:  http://localhost:8080/halloween
-	@echo   [3] Halloween API:   http://localhost:8080/api/halloween
-	@echo   [4] Server Info:     http://localhost:8080/info
-	@echo.
-	@echo   *** SECURITY FEATURES ***
-	@echo   [X] Rate Limiting (10 requests/second)
-	@echo   [X] Security Headers
-	@echo   [X] Non-root user execution
-	@echo.
 	@echo Waiting for server to start...
 	@timeout /t 3 /nobreak >nul
 	@echo Server ready! Opening Halloween page...
@@ -55,37 +46,14 @@ stop:
 	@-docker stop $(CONTAINER_NAME) 2>nul && echo Container stopped || echo Container was not running
 
 clean: stop
-	@echo --- Cleaning up resources ---
+	@echo --- Cleaning up Docker resources ---
 	@-docker rmi $(FULL_IMAGE_NAME) 2>nul && echo Image deleted || echo Image not found
-	@-docker system prune -f 2>nul && echo System cleaned || echo Cleanup completed
-	@echo Cleanup completed
+	@-docker system prune -f --volumes 2>nul && echo System cleaned || echo Cleanup completed
+	@echo Docker cleanup completed
 
 logs:
 	@echo --- Showing logs for $(CONTAINER_NAME) ---
 	@docker logs -f $(CONTAINER_NAME)
-
-status:
-	@docker ps -a | findstr "$(CONTAINER_NAME)" >nul && echo Container is running || echo Container is not running
-
-open-all:
-	@echo Opening all endpoints in browser...
-	@start http://localhost:8080/ 2>nul
-	@timeout /t 1 /nobreak >nul
-	@start http://localhost:8080/halloween 2>nul
-	@timeout /t 1 /nobreak >nul
-	@start http://localhost:8080/api/halloween 2>nul
-	@echo All endpoints opened in browser tabs
-
-deploy: run
-	@echo.
-	@echo *** QUICK ACCESS ***
-	@echo Health:    http://localhost:8080/
-	@echo Halloween: http://localhost:8080/halloween
-	@echo API:       http://localhost:8080/api/halloween
-	@echo.
-	@echo Use 'make open-all' to open all links in browser
-
-restart: stop run
 
 # ============================================================================
 # SECURITY SCANNING TARGETS
@@ -93,16 +61,14 @@ restart: stop run
 
 scan: build
 	@echo --- Scanning Docker Image for HIGH/CRITICAL vulnerabilities using Trivy ---
-	@"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
+	$(TRIVY_BIN) image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
 	@echo --- Trivy scan completed ---
 
-scan-fast: build
-	@echo --- Fast scan (vulnerabilities only, no secrets) ---
-	@"C:\Users\coole\scoop\shims\trivy.exe" image --scanners vuln --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
-
-scan-full: build
-	@echo --- Full security scan with secrets detection ---
-	@"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
+vulnerability-scan: build
+	@echo --- Comprehensive Vulnerability Assessment ---
+	@echo "🔍 Scanning $(FULL_IMAGE_NAME) for vulnerabilities..."
+	$(TRIVY_BIN) image --format table --scanners vuln,misconfig --severity MEDIUM,HIGH,CRITICAL $(FULL_IMAGE_NAME)
+	@echo "✅ Vulnerability scan completed"
 
 scan-docker: build
 	@echo --- Scanning with Docker Scout ---
@@ -114,72 +80,26 @@ scan-docker: build
 
 falco-check:
 	@echo --- Checking Falco prerequisites ---
-	@where helm >nul 2>&1 || (echo "❌ Helm not found. Installing Helm..." && $(MAKE) install-helm)
+	@where helm >nul 2>&1 || (echo "❌ Helm not found. Please install Helm manually or run 'make install-helm'")
 	@echo ✓ Helm is available
 	@kubectl version --client >nul 2>&1 || (echo "ERROR: kubectl is required." && exit 1)
 	@echo ✓ kubectl is available
 	@echo --- Prerequisites check passed ---
 
-install-helm:
-	@echo --- Installing Helm ---
-	@scoop install helm || (echo "Failed to install via scoop. Please install Helm manually: https://helm.sh/docs/intro/install/" && exit 1)
-	@echo ✓ Helm installed successfully
-
-install-helm-choco:
-	@echo --- Installing Helm via Chocolatey ---
-	choco install kubernetes-helm -y
-	@echo ✓ Helm installed via Chocolatey
-
-helm-cleanup:
-	@echo --- Cleaning up stuck Helm operations ---
-	@-helm rollback falco -n $(FALCO_NAMESPACE) 0 --cleanup-on-fail 2>nul || echo "No rollback needed"
-	@-helm delete falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo "No release to delete"
-	@-kubectl delete secrets -n $(FALCO_NAMESPACE) -l "owner=helm" --ignore-not-found=true
-	@echo "✅ Helm cleanup completed"
-
-falco-clean-complete:
-	@echo --- Complete Falco Cleanup ---
-	@echo "🧹 Removing all Falco resources..."
+falco-install-clean: falco-check k8s-check
+	@echo --- Complete Falco Cleanup and Fresh Install ---
+	@echo "🧹 Removing previous Falco resources..."
 	-helm uninstall falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo "No helm release found"
 	-kubectl delete namespace $(FALCO_NAMESPACE) --ignore-not-found=true --wait --timeout=60s
-	-kubectl delete role,rolebinding,serviceaccount,configmap,secret,daemonset,service,deployment -l app=falco -A --ignore-not-found=true --wait
-	-kubectl delete role,rolebinding,serviceaccount,configmap,secret,daemonset,service,deployment -l app.kubernetes.io/name=falco -A --ignore-not-found=true --wait
-	@echo "✅ Complete cleanup finished"
-	@echo "Wait 30 seconds for resources to be fully removed..."
-	@timeout /t 30 /nobreak >nul
-
-falco-install-simple: falco-check k8s-check
-	@echo --- Simple Falco Installation ---
+	@echo "➡️ Installing Falco (simple version)..."
 	helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
 	helm repo update
-	@echo "📦 Installing Falco (simple version)..."
 	helm upgrade --install falco falcosecurity/falco \
-		--namespace $(FALCO_NAMESPACE) \
-		--create-namespace \
-		--wait
-	@echo "✅ Falco installed successfully"
-
-falco-install-no-wait: falco-check k8s-check helm-cleanup
-	@echo --- Installing Falco without wait ---
-	helm repo add falcosecurity https://falcosecurity.github.io/charts --force-update
-	helm repo update
-	@echo "📦 Installing Falco (without wait flag)..."
-	helm upgrade --install falco falcosecurity/falco \
-		--namespace $(FALCO_NAMESPACE) \
-		--create-namespace \
-		--set falcosidekick.enabled=true \
-		--set falcosidekick.webui.enabled=true \
-		--set tty=true
-	@echo "⌛ Waiting separately for pods..."
-	@timeout /t 30 /nobreak >nul
-	@kubectl wait --for=condition=ready pod -l app=falco -n $(FALCO_NAMESPACE) --timeout=120s
-	@echo "✅ Falco installation completed!"
-
-falco-install: falco-install-no-wait
-	@echo "🎉 Falco installation completed!"
-
-falco-install-clean: falco-clean-complete falco-install-simple
-	@echo "🎉 Fresh Falco installation completed!"
+	   --namespace $(FALCO_NAMESPACE) \
+	   --create-namespace \
+	   --set falcosidekick.enabled=false \
+	   --wait
+	@echo "✅ Fresh Falco installation completed!"
 
 falco-logs:
 	@echo --- Falco Security Events ---
@@ -187,22 +107,29 @@ falco-logs:
 
 falco-test:
 	@echo --- Testing Falco Detection ---
-	@echo "🧪 Generating test security event..."
-	kubectl run --rm -i --tty falco-test --image=alpine --restart=Never -- sh -c "cat /etc/shadow" || true
+	@echo "🧪 Generating test security event (cat /etc/shadow)..."
+	kubectl run --rm -i --tty falco-test --image=alpine --restart=Never --namespace $(K8S_NAMESPACE) -- sh -c "cat /etc/shadow" || true
 	@echo "📋 Check logs with: make falco-logs"
 
-falco-status:
-	@echo --- Falco Status ---
-	kubectl get pods,svc,daemonset -n $(FALCO_NAMESPACE)
+runtime-security-test: falco-test
+	@echo --- Runtime Security Tests (Advanced) ---
+	@echo "🧪 Testing Falco detection capabilities against application namespace..."
+	@echo "1. Testing sensitive file access..."
+	kubectl run --rm -i --tty test-file-access --image=alpine --restart=Never --namespace $(K8S_NAMESPACE) -- sh -c "ls -la /etc/passwd" || true
+	@timeout /t 2 /nobreak >nul
+	@echo "2. Testing binary change..."
+	kubectl run --rm -i --tty test-binary --image=alpine --restart=Never --namespace $(K8S_NAMESPACE) -- sh -c "touch /usr/bin/newfile" || true
+	@echo.
+	@echo "📋 Check security events with: make falco-logs"
 
 falco-clean:
 	@echo --- Removing Falco ---
-	helm uninstall falco -n $(FALCO_NAMESPACE) --wait
-	kubectl delete namespace $(FALCO_NAMESPACE) --ignore-not-found=true
+	helm uninstall falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo "No Falco release found"
+	kubectl delete namespace $(FALCO_NAMESPACE) --ignore-not-found=true --timeout=60s
 	@echo "✅ Falco removed"
 
 # ============================================================================
-# KUBERNETES TARGETS
+# KUBERNETES TARGETS (Deployment & Access)
 # ============================================================================
 
 k8s-check:
@@ -212,203 +139,56 @@ k8s-check:
 	@echo --- Kubernetes is ready! ---
 
 k8s-deploy: build k8s-check
-	@echo --- Deploying to Docker Desktop Kubernetes ---
+	@echo --- Deploying Go Secure Server to Kubernetes ---
 	kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	kubectl apply -f k8s/ -n $(K8S_NAMESPACE)
 	@echo --- Waiting for deployment to be ready ---
 	kubectl wait --for=condition=ready pod -l app=go-secure-server -n $(K8S_NAMESPACE) --timeout=120s
-	@echo --- Deployment completed! ---
+	@echo "--- Application Deployment completed! ---"
 
 k8s-access:
 	@echo --- Starting Port Forward ---
 	@echo "🎃 Your Go Secure Server is now in K8s with Runtime Security!"
 	@echo ""
-	@echo "📡 AVAILABLE ENDPOINTS:"
+	@echo "📡 AVAILABLE ENDPOINTS (http://localhost:8080/...):"
 	@echo "   🔹 Health Check:    http://localhost:8080/"
 	@echo "   🔹 Halloween Page:  http://localhost:8080/halloween"
 	@echo "   🔹 Halloween API:   http://localhost:8080/api/halloween"
-	@echo "   🔹 Server Info:     http://localhost:8080/info"
-	@echo ""
-	@echo "⚡ SECURITY FEATURES:"
-	@echo "   ✅ Static Analysis (Trivy)"
-	@echo "   ✅ Runtime Security (Falco)"
-	@echo "   ✅ K8s Security Context"
-	@echo "   ✅ Non-root user execution"
 	@echo ""
 	@echo "Press Ctrl+C to stop port-forwarding"
 	kubectl port-forward svc/go-secure-service 8080:80 -n $(K8S_NAMESPACE)
 
-k8s-run: k8s-deploy
-	@echo --- Full Kubernetes Deployment Complete ---
-	@echo --- Starting automatic port-forward ---
-	$(MAKE) k8s-access
+k8s-run: k8s-deploy k8s-access
 
-k8s-logs:
-	@echo --- K8s Application Logs ---
-	kubectl logs -l app=go-secure-server -n $(K8S_NAMESPACE) --tail=50 -f
-
-k8s-status:
-	@echo --- Kubernetes Cluster Status ---
-	@echo "📊 Namespace: $(K8S_NAMESPACE)"
-	kubectl get pods,svc,deploy -n $(K8S_NAMESPACE)
-	@echo.
-	@echo "🔒 Security Context:"
-	kubectl get pod -l app=go-secure-server -n $(K8S_NAMESPACE) -o jsonpath='{.items[*].spec.securityContext}' | echo
-
-k8s-clean:
-	@echo --- Cleaning Kubernetes Resources ---
+k8s-clean: netpol-clean
+	@echo --- Cleaning Kubernetes Application Resources ---
 	kubectl delete -f k8s/ -n $(K8S_NAMESPACE) --ignore-not-found=true --wait
 	kubectl delete namespace $(K8S_NAMESPACE) --ignore-not-found=true --timeout=60s
-	@echo --- K8s cleanup completed ---
-
-k8s-update: build
-	@echo --- Updating K8s Deployment ---
-	kubectl rollout restart deployment/go-secure-server -n $(K8S_NAMESPACE)
-	kubectl wait --for=condition=ready pod -l app=go-secure-server -n $(K8S_NAMESPACE) --timeout=120s
-	@echo --- Update completed ---
-
-k8s-scan: build
-	@echo --- Comprehensive Kubernetes Security Scan ---
-	@echo "🔍 Docker Image Scan:"
-	@"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
-	@echo.
-	@echo "🛡️ K8s Manifest Validation:"
-	kubectl apply -f k8s/ -n $(K8S_NAMESPACE) --dry-run=server --validate=true
-	@echo.
-	@echo "✅ Kubernetes security scan completed"
+	@echo --- K8s application cleanup completed ---
 
 # ============================================================================
-# NEW SECURITY & MONITORING TARGETS
+# NETWORK POLICY TARGETS (Zero Trust)
 # ============================================================================
 
-security-dashboard:
-	@echo --- Launching Security Dashboard ---
-	@echo "📊 SECURITY DASHBOARD - $(shell date)"
-	@echo "=========================================="
-	@echo "🔍 Image: $(FULL_IMAGE_NAME)"
-	@echo "🐳 Container: $(CONTAINER_NAME)"
-	@echo "☸️  K8s Namespace: $(K8S_NAMESPACE)"
-	@echo "🛡️  Falco Namespace: $(FALCO_NAMESPACE)"
-	@echo.
-	@echo "⚡ REAL-TIME STATUS:"
-	@-docker images | findstr "$(IMAGE_NAME)" >nul && echo "✅ Docker Image: BUILT" || echo "❌ Docker Image: NOT BUILT"
-	@-docker ps | findstr "$(CONTAINER_NAME)" >nul && echo "✅ Container: RUNNING" || echo "❌ Container: STOPPED"
-	@-kubectl get ns $(K8S_NAMESPACE) >nul 2>&1 && echo "✅ K8s App: DEPLOYED" || echo "❌ K8s App: NOT DEPLOYED"
-	@-kubectl get ns $(FALCO_NAMESPACE) >nul 2>&1 && echo "✅ Falco: INSTALLED" || echo "❌ Falco: NOT INSTALLED"
-	@echo.
-	@echo "🎯 QUICK ACTIONS:"
-	@echo "   make security-quick    - Fast deployment"
-	@echo "   make security-full     - Full security stack"
-	@echo "   make security-scan     - Run security scans"
-	@echo "   make security-clean    - Clean everything"
+netpol-apply: k8s-check
+	@echo --- Applying Network Policy: $(NETPOL_FILE) ---
+	kubectl apply -f $(NETPOL_FILE) -n $(K8S_NAMESPACE)
+	@echo "✅ NetworkPolicy applied successfully. (Zero Trust: Deny All, Allow 8080 and DNS)"
 
-vulnerability-scan: build
-	@echo --- Comprehensive Vulnerability Assessment ---
-	@echo "🔍 Scanning $(FULL_IMAGE_NAME) for vulnerabilities..."
-	@"C:\Users\coole\scoop\shims\trivy.exe" image --format table --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
-	@echo.
-	@echo "📦 Scanning dependencies..."
-	@"C:\Users\coole\scoop\shims\trivy.exe" image --format table --scanners vuln --severity MEDIUM,HIGH,CRITICAL $(FULL_IMAGE_NAME)
-	@echo.
-	@echo "✅ Vulnerability scan completed"
+netpol-clean: k8s-check
+	@echo --- Removing Network Policy: $(NETPOL_FILE) ---
+	-kubectl delete -f $(NETPOL_FILE) -n $(K8S_NAMESPACE) --ignore-not-found=true
+	@echo "✅ NetworkPolicy removed."
 
-runtime-security-test:
-	@echo --- Runtime Security Tests ---
-	@echo "🧪 Testing Falco detection capabilities..."
-	@echo "1. Testing privilege escalation detection..."
-	@-kubectl run --rm -i --tty test-privilege --image=alpine --restart=Never -- sh -c "whoami" || true
-	@timeout /t 2 /nobreak >nul
-	@echo "2. Testing sensitive file access..."
-	@-kubectl run --rm -i --tty test-file-access --image=alpine --restart=Never -- sh -c "ls -la /etc/passwd" || true
-	@timeout /t 2 /nobreak >nul
-	@echo "3. Testing network reconnaissance..."
-	@-kubectl run --rm -i --tty test-network --image=alpine --restart=Never -- sh -c "ping -c 1 google.com" || true
-	@echo.
-	@echo "📋 Check security events with: make falco-logs"
-
-k8s-security-audit:
-	@echo --- Kubernetes Security Audit ---
-	@echo "🔒 Checking K8s security configuration..."
-	@echo.
-	@echo "📋 Namespace Security:"
-	@-kubectl get namespace $(K8S_NAMESPACE) -o yaml | findstr "labels" || echo "No labels found"
-	@echo.
-	@echo "🛡️ Pod Security Context:"
-	@-kubectl get pod -l app=go-secure-server -n $(K8S_NAMESPACE) -o jsonpath='{.items[*].spec.securityContext}' 2>/dev/null && echo || echo "No security context"
-	@echo.
-	@echo "🔐 Service Account:"
-	@-kubectl get pod -l app=go-secure-server -n $(K8S_NAMESPACE) -o jsonpath='{.items[*].spec.serviceAccount}' 2>/dev/null && echo || echo "Default service account"
-	@echo.
-	@echo "✅ K8s security audit completed"
-
-quick-debug:
-	@echo --- Quick Debug Information ---
-	@echo "🐳 Docker:"
-	@-docker version --format 'Docker Version: {{.Server.Version}}' 2>/dev/null || echo "Docker not available"
-	@echo.
-	@echo "☸️ Kubernetes:"
-	@-kubectl version --short 2>/dev/null | findstr "Server" || echo "Kubernetes not available"
-	@echo.
-	@echo "📦 Helm:"
-	@-helm version --short 2>/dev/null || echo "Helm not available"
-	@echo.
-	@echo "🛡️ Falco:"
-	@-kubectl get pods -n $(FALCO_NAMESPACE) 2>/dev/null | findstr "falco" && echo "Falco: RUNNING" || echo "Falco: NOT RUNNING"
-	@echo.
-	@echo "🚀 Application:"
-	@-kubectl get pods -n $(K8S_NAMESPACE) 2>/dev/null | findstr "go-secure-server" && echo "App: RUNNING" || echo "App: NOT RUNNING"
-
-performance-test:
-	@echo --- Performance & Load Testing ---
-	@echo "🚀 Testing application performance..."
-	@echo "1. Basic health check response time:"
-	@-powershell -Command "Measure-Command { curl -s -o $null http://localhost:8080/ } | Select-Object TotalMilliseconds" 2>nul || echo "Health check failed or server not running"
-	@echo "2. API endpoint performance:"
-	@-powershell -Command "Measure-Command { curl -s -o $null http://localhost:8080/api/halloween } | Select-Object TotalMilliseconds" 2>nul || echo "API check failed or server not running"
-	@echo "3. Rate limiting test (5 requests):"
-	@for /l %%i in (1,1,5) do @(curl -s -w "Request %%i: %%{http_code}\n" -o nul http://localhost:8080/api/halloween 2>nul && timeout /t 1 /nobreak >nul)
-	@echo "✅ Performance test completed"
-
-backup-configs:
-	@echo --- Backup Configuration Files ---
-	@set BACKUP_DIR=backups\$(shell powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'")
-	@mkdir "%BACKUP_DIR%" 2>nul
-	@copy Dockerfile "%BACKUP_DIR%\" >nul && echo "✅ Dockerfile backed up
-	@if exist k8s\*.yaml (copy k8s\*.yaml "%BACKUP_DIR%\" >nul && echo "✅ K8s manifests backed up") else (echo "❌ K8s manifests not found)
-	@copy Makefile "%BACKUP_DIR%\" >nul && echo "✅ Makefile backed up
-	@if exist go.mod (copy go.mod "%BACKUP_DIR%\" >nul && echo "✅ Go mod backed up") else (echo "❌ go.mod not found)
-	@echo "📦 Backup created in: %BACKUP_DIR%"
-
-export-logs:
-	@echo --- Exporting Logs for Analysis ---
-	@set LOG_DIR=logs\$(shell powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'")
-	@mkdir "%LOG_DIR%" 2>nul
-	@echo "📋 Exporting Docker logs..."
-	@-docker logs $(CONTAINER_NAME) > "%LOG_DIR%\docker.log" 2>&1 || echo "No Docker logs"
-	@echo "📋 Exporting K8s application logs..."
-	@-kubectl logs -l app=go-secure-server -n $(K8S_NAMESPACE) > "%LOG_DIR%\k8s-app.log" 2>&1 || echo "No K8s logs"
-	@echo "📋 Exporting Falco security events..."
-	@-kubectl logs -l app=falco -n $(FALCO_NAMESPACE) --tail=100 > "%LOG_DIR%\falco-security.log" 2>&1 || echo "No Falco logs"
-	@echo "📦 Logs exported to: %LOG_DIR%"
-
-security-report:
-	@echo --- Generating Security Report ---
-	@set REPORT_FILE=security-report-$(shell powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'").txt
-	@echo "🛡️ SECURITY REPORT - $(shell date)" > "%REPORT_FILE%"
-	@echo "=================================" >> "%REPORT_FILE%"
-	@echo. >> "%REPORT_FILE%"
-	@echo "Docker Image: $(FULL_IMAGE_NAME)" >> "%REPORT_FILE%"
-	@echo "Generated: $(shell date)" >> "%REPORT_FILE%"
-	@echo. >> "%REPORT_FILE%"
-	@echo "VULNERABILITY SCAN:" >> "%REPORT_FILE%"
-	@-"C:\Users\coole\scoop\shims\trivy.exe" image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME) >> "%REPORT_FILE%" 2>&1 || echo "Scan failed" >> "%REPORT_FILE%"
-	@echo. >> "%REPORT_FILE%"
-	@echo "KUBERNETES STATUS:" >> "%REPORT_FILE%"
-	@-kubectl get pods,svc -n $(K8S_NAMESPACE) >> "%REPORT_FILE%" 2>&1
-	@echo. >> "%REPORT_FILE%"
-	@echo "FALCO STATUS:" >> "%REPORT_FILE%"
-	@-kubectl get pods -n $(FALCO_NAMESPACE) >> "%REPORT_FILE%" 2>&1
-	@echo "📊 Security report saved to: %REPORT_FILE%"
+netpol-test: k8s-check
+	@echo --- Testing Network Policy Enforcement (Requires 'go-secure-server' deployment) ---
+	@echo "1. Testing INGRESS (Ingress should be allowed on port 8080 only)"
+	kubectl run test-client --rm -i --image=alpine/curl --restart=Never --namespace $(K8S_NAMESPACE) -- /bin/sh -c "curl -s --max-time 5 go-secure-service:8080/ || echo 'Ingress Test: FAILED (Unexpected)'"
+	@echo "2. Testing EGRESS (Egress to the external Internet should be blocked)"
+	kubectl exec deployment/go-secure-server -n $(K8S_NAMESPACE) -- sh -c "echo 'Testing external connection...'; curl -s --max-time 3 https://google.com > /dev/null 2>&1 && echo 'Egress Test: FAILED (Unexpected - NetPol broken)' || echo 'Egress Test: PASSED (Blocked by NetPol)'"
+	@echo "3. Testing KubeDNS (DNS resolution must be allowed)"
+	kubectl exec deployment/go-secure-server -n $(K8S_NAMESPACE) -- sh -c "nslookup google.com > /dev/null 2>&1 && echo 'DNS Test: PASSED (Allowed by NetPol)' || echo 'DNS Test: FAILED (NetPol blocking DNS)'"
+	@echo "✅ Network Policy tests initiated. Review output manually."
 
 # ============================================================================
 # COMPREHENSIVE SECURITY PIPELINES
@@ -424,112 +204,108 @@ security-quick: build k8s-deploy
 	@echo "🔍 For full security stack run: make security-full"
 	@echo "🚀 Quick access: make k8s-access"
 
-security-pipeline: scan falco-install-simple k8s-deploy
-	@echo.
-	@echo "🎉 SECURITY PIPELINE COMPLETED!"
-	@echo "✅ Docker image built and scanned"
-	@echo "✅ Falco runtime security installed"
-	@echo "✅ K8s manifests validated and deployed"
-	@echo "✅ Application running in secure environment"
-	@echo.
-	@echo "🔍 NEXT STEPS:"
-	@echo "  make k8s-access     - Access your secured application"
-	@echo "  make falco-logs     - Monitor security events"
-	@echo "  make falco-test     - Test Falco detection"
-
-security-full: scan falco-install-clean k8s-deploy
+security-full: scan falco-install-clean k8s-deploy netpol-apply
 	@echo.
 	@echo "🎉 FULL SECURITY STACK DEPLOYED!"
 	@echo "✅ Docker image built and scanned"
 	@echo "✅ Falco runtime security installed (clean install)"
 	@echo "✅ K8s application deployed with security context"
+	@echo "✅ Network Policy applied (Zero Trust)"
 	@echo.
 	@echo "🛡️  SECURITY MONITORING ACTIVE!"
 	@echo "🔍 Run: make falco-logs    - View security events"
+	@echo "🧪 Run: make netpol-test   - Test Network Policy enforcement"
 	@echo "🚀 Run: make k8s-access    - Access your application"
 
-security-scan: scan k8s-scan
+security-scan: vulnerability-scan k8s-security-audit
 	@echo --- Security Scanning Complete ---
 
 security-clean: k8s-clean falco-clean clean
 	@echo --- Complete Security Environment Cleanup ---
 
-security-status:
-	@echo --- Comprehensive Security Status ---
-	@echo.
-	@echo "🔍 STATIC ANALYSIS:"
-	@-docker images | findstr "$(IMAGE_NAME)" >nul && echo "✅ Docker image built" || echo "❌ Docker image not built"
-	@echo.
-	@echo "🔒 RUNTIME SECURITY:"
-	@-kubectl get pods -n $(FALCO_NAMESPACE) 2>nul | findstr "falco" >nul && echo "✅ Falco installed" || echo "❌ Falco not installed"
-	@echo.
-	@echo "🚀 KUBERNETES:"
-	@-kubectl get pods -n $(K8S_NAMESPACE) 2>nul | findstr "go-secure-server" >nul && echo "✅ Application deployed" || echo "❌ Application not deployed"
-	@echo.
-	@echo "📊 SECURITY MONITORING:"
-	@echo "   make falco-logs    - View security events"
-	@echo "   make k8s-logs      - Application logs"
-
 # ============================================================================
-# INFORMATION TARGETS
+# AUDIT & DEBUGGING TARGETS
 # ============================================================================
 
-info:
+k8s-security-audit:
+	@echo --- Kubernetes Security Audit ---
+	@echo "🔒 Checking K8s security configuration..."
+	@echo.
+	@echo "🛡️ Pod Security Context (go-secure-server):"
+	@-kubectl get pod -l app=go-secure-server -n $(K8S_NAMESPACE) -o jsonpath='{.items[*].spec.containers[*].securityContext}' 2>/dev/null && echo || echo "No security context found"
+	@echo.
+	@echo "🌐 Network Policy Check:"
+	@-kubectl get netpol -n $(K8S_NAMESPACE) | findstr "go-server-default-deny" >nul && echo "✅ Network Policy is applied." || echo "❌ Network Policy is MISSING."
+	@echo.
+	@echo "✅ K8s security audit completed"
+
+quick-debug:
+	@echo --- Quick Debug Information ---
+	@echo "🐳 Docker:"
+	@-docker version --format 'Docker Version: {{.Server.Version}}' 2>/dev/null | findstr "Version" || echo "Docker not available"
+	@echo "☸️ Kubernetes:"
+	@-kubectl version --short 2>/dev/null | findstr "Server" || echo "Kubernetes not available"
+	@echo "🛡️ Falco:"
+	@-kubectl get pods -n $(FALCO_NAMESPACE) 2>/dev/null | findstr "falco" && echo "Falco: RUNNING" || echo "Falco: NOT RUNNING"
+	@echo "🚀 Application:"
+	@-kubectl get pods -n $(K8S_NAMESPACE) 2>/dev/null | findstr "go-secure-server" && echo "App: RUNNING" || echo "App: NOT RUNNING"
+
+security-report:
+	@echo --- Generating Security Report ---
+	@set REPORT_FILE=security-report-$(shell powershell -Command "Get-Date -Format 'yyyyMMdd_HHmmss'").txt
+	@echo "🛡️ SECURITY REPORT - $(shell date)" > "%REPORT_FILE%"
+	@echo "=================================" >> "%REPORT_FILE%"
+	@echo. >> "%REPORT_FILE%"
+	@echo "VULNERABILITY SCAN:" >> "%REPORT_FILE%"
+	$(TRIVY_BIN) image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME) >> "%REPORT_FILE%" 2>&1 || echo "Scan failed" >> "%REPORT_FILE%"
+	@echo. >> "%REPORT_FILE%"
+	@echo "KUBERNETES STATUS:" >> "%REPORT_FILE%"
+	@-kubectl get pods,svc -n $(K8S_NAMESPACE) >> "%REPORT_FILE%" 2>&1
+	@echo. >> "%REPORT_FILE%"
+	@echo "FALCO STATUS:" >> "%REPORT_FILE%"
+	@-kubectl get pods -n $(FALCO_NAMESPACE) >> "%REPORT_FILE%" 2>&1
+	@echo "📊 Security report saved to: %REPORT_FILE%"
+
+# ============================================================================
+# INFORMATION & HELP TARGETS
+# ============================================================================
+
+info: help
+
+help:
 	@echo.
 	@echo "🦀 GO K8S SECURITY LAB - COMPLETE MAKEFILE"
 	@echo "==========================================="
 	@echo.
-	@echo "📦 PROJECT INFO:"
-	@echo "   Image:          $(FULL_IMAGE_NAME)"
-	@echo "   Container:      $(CONTAINER_NAME)"
-	@echo "   K8s Namespace:  $(K8S_NAMESPACE)"
-	@echo "   Falco Namespace: $(FALCO_NAMESPACE)"
-	@echo.
-	@echo "🚀 QUICK START:"
-	@echo "   make all              - Quick security deployment"
-	@echo "   make security-full    - Complete security stack"
-	@echo "   make run              - Quick Docker run"
+	@echo "🚀 QUICK START & PIPELINES:"
+	@echo "   make all              - Quick security deployment (build + k8s-deploy)"
+	@echo "   make security-full    - Complete security stack (scan, falco, k8s, netpol)"
+	@echo "   make security-clean   - Clean everything (k8s, falco, docker)"
 	@echo.
 	@echo "🔒 SECURITY COMMANDS:"
-	@echo "   make security-dashboard - Security status dashboard"
-	@echo "   make vulnerability-scan - Comprehensive vulnerability scan"
-	@echo "   make runtime-security-test - Test Falco detection"
-	@echo "   make k8s-security-audit - K8s security audit"
-	@echo "   make security-report   - Generate security report"
+	@echo "   make scan             - Quick Trivy scan (HIGH/CRITICAL)"
+	@echo "   make vulnerability-scan - Full vulnerability and misconfig scan"
+	@echo "   make k8s-security-audit - Check K8s security context & NetPol status"
+	@echo "   make falco-test       - Trigger a security event for Falco"
+	@echo "   make netpol-test      - Test Network Policy ingress/egress"
+	@echo "   make security-report  - Generate a file-based security report"
 	@echo.
-	@echo "🛠️  DEVELOPMENT:"
+	@echo "🛠️  K8S MANAGEMENT:"
+	@echo "   make k8s-deploy       - Deploy app & NetPol to K8s"
+	@echo "   make k8s-access       - Start port-forward to access app"
+	@echo "   make falco-install-clean - Reinstall Falco securely"
+	@echo "   make falco-logs       - Follow Falco security events"
+	@echo.
+	@echo "🐳 LOCAL DOCKER:"
 	@echo "   make build            - Build Docker image"
-	@echo "   make test             - Run tests"
-	@echo "   make k8s-deploy       - Deploy to Kubernetes"
-	@echo "   make performance-test - Load and performance testing"
+	@echo "   make run              - Run Docker image locally"
+	@echo "   make stop             - Stop local container"
 	@echo.
-	@echo "📊 MONITORING:"
-	@echo "   make quick-debug      - System status check"
-	@echo "   make export-logs      - Export all logs for analysis"
-	@echo "   make backup-configs   - Backup configuration files"
-	@echo.
-	@echo "🧹 CLEANUP:"
-	@echo "   make clean            - Clean Docker resources"
-	@echo "   make k8s-clean        - Clean K8s resources"
-	@echo "   make falco-clean      - Remove Falco"
-	@echo "   make security-clean   - Clean everything"
-
-help: info
-
-# ============================================================================
-# UTILITY TARGETS
-# ============================================================================
 
 .PHONY: all build run test stop clean logs status open-all deploy restart \
-        scan scan-fast scan-full scan-docker \
-        falco-check install-helm install-helm-choco helm-cleanup \
-        falco-clean-complete falco-install-simple falco-install-no-wait \
-        falco-install falco-install-clean falco-logs falco-test \
-        falco-status falco-clean \
-        k8s-check k8s-deploy k8s-access k8s-run k8s-logs k8s-status \
-        k8s-clean k8s-update k8s-scan \
-        security-quick security-pipeline security-full security-scan \
-        security-clean security-status info help \
-        security-dashboard vulnerability-scan runtime-security-test \
-        k8s-security-audit quick-debug performance-test backup-configs \
-        export-logs security-report
+        scan vulnerability-scan scan-docker \
+        falco-check falco-install-clean falco-logs falco-test runtime-security-test falco-clean \
+        k8s-check k8s-deploy k8s-access k8s-run k8s-logs k8s-status k8s-clean \
+        netpol-apply netpol-clean netpol-test \
+        security-quick security-full security-scan security-clean info help \
+        k8s-security-audit quick-debug security-report

@@ -1,0 +1,53 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: go-server-default-deny
+  namespace: go-security-lab
+spec:
+  podSelector:
+    matchLabels:
+      app: go-secure-server
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    - ports:
+        - protocol: TCP
+          port: 8080
+      from: []
+
+  egress:
+    # Rule 1: Allow outgoing DNS traffic (to external DNS servers)
+    - to:
+        - ipBlock:
+            cidr: 10.96.0.1/32  # Only the exact API server IP
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # Rule 2: Allow communication with kube-dns in kube-system namespace
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+
+    # Rule 3: Allow access to Kubernetes API server
+    # Using the clusterIP you found: 10.96.0.1
+    - to:
+        - ipBlock:
+            cidr: 10.96.0.0/12  # Covers 10.96.0.1 and similar cluster services
+      ports:
+        - protocol: TCP
+          port: 443
