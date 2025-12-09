@@ -1,35 +1,40 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: go-server-default-deny
+  name: go-server-secure-policy
   namespace: go-security-lab
 spec:
   podSelector:
     matchLabels:
       app: go-secure-server
-
   policyTypes:
     - Ingress
     - Egress
 
   ingress:
-    - ports:
+    # Rule 1: Allow from internal frontend
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: frontend-namespace
+      ports:
         - protocol: TCP
           port: 8080
-      from: []
+
+    # Rule 2: Allow from monitoring tools
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
 
   egress:
-    # Rule 1: Allow outgoing DNS traffic (to external DNS servers)
-    - to:
-        - ipBlock:
-            cidr: 10.96.0.1/32  # Only the exact API server IP
-      ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-
-    # Rule 2: Allow communication with kube-dns in kube-system namespace
+    # DNS
     - to:
         - namespaceSelector:
             matchLabels:
@@ -38,16 +43,35 @@ spec:
             matchLabels:
               k8s-app: kube-dns
       ports:
-        - protocol: TCP
-          port: 53
         - protocol: UDP
           port: 53
+        - protocol: TCP
+          port: 53
 
-    # Rule 3: Allow access to Kubernetes API server
-    # Using the clusterIP you found: 10.96.0.1
+    # Kubernetes API
     - to:
         - ipBlock:
-            cidr: 10.96.0.0/12  # Covers 10.96.0.1 and similar cluster services
+            cidr: 10.96.0.1/32
       ports:
         - protocol: TCP
           port: 443
+
+    # NTP time sync
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: UDP
+          port: 123
+
+    # External HTTP/HTTPS
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+
+    # Deny all other egress (implicit)
