@@ -3,9 +3,20 @@ kind: Service
 metadata:
   name: go-secure-service
   namespace: go-security-lab
+  labels:
+    app: go-secure-server
 spec:
+  # The service type is ClusterIP, meaning it's only accessible within the cluster.
+  type: ClusterIP
+
+  # Selects the Pods with the label 'app: go-secure-server'
   selector:
     app: go-secure-server
+
   ports:
-    - port: 8080
+    - name: http-port
+      protocol: TCP
+      # The port the service exposes (used by the test client: go-secure-service:80)
+      port: 80
+      # The target port on the Pod (where the Go server listens)
       targetPort: 8080

@@ -12,19 +12,15 @@ spec:
     - Egress
 
   ingress:
-    # Rule 1: Allow from internal frontend
+    # Rule 1: Allow traffic from pods in SAME namespace ONLY
     - from:
-        - podSelector:
-            matchLabels:
-              app: frontend
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: frontend-namespace
+        - podSelector: {}  # Empty selector = all pods in current namespace
       ports:
         - protocol: TCP
           port: 8080
 
-    # Rule 2: Allow from monitoring tools
+    # Rule 2: REMOVE this or make it specific:
+    # If you need external access (e.g., from monitoring namespace):
     - from:
         - namespaceSelector:
             matchLabels:
@@ -34,7 +30,7 @@ spec:
           port: 8080
 
   egress:
-    # DNS
+    # Keep DNS rule
     - to:
         - namespaceSelector:
             matchLabels:
@@ -48,7 +44,7 @@ spec:
         - protocol: TCP
           port: 53
 
-    # Kubernetes API
+    # Keep API server rule
     - to:
         - ipBlock:
             cidr: 10.96.0.1/32
@@ -56,22 +52,14 @@ spec:
         - protocol: TCP
           port: 443
 
-    # NTP time sync
+    # ADD these for basic functionality:
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
       ports:
+        - protocol: TCP
+          port: 80    # HTTP for external services
+        - protocol: TCP
+          port: 443   # HTTPS for external services
         - protocol: UDP
-          port: 123
-
-    # External HTTP/HTTPS
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - protocol: TCP
-          port: 80
-        - protocol: TCP
-          port: 443
-
-    # Deny all other egress (implicit)
+          port: 123   # NTP time synchronization

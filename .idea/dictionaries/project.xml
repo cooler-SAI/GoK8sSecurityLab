@@ -4,6 +4,7 @@
       <w>aquasecurity</w>
       <w>buildkit</w>
       <w>buildx</w>
+      <w>busybox</w>
       <w>codeql</w>
       <w>coole</w>
       <w>falco</w>
