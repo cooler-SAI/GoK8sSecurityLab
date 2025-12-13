@@ -2,9 +2,14 @@
 # PROJECT CONFIGURATION
 # ============================================================================
 PROJECT_NAME := gok8ssecuritylab
-IMAGE_NAME := $(PROJECT_NAME)/go-secure-server
+# !!! IMPORTANT: Replace 'YOUR_GITHUB_USERNAME' with your actual GitHub username !!!
+GHCR_REGISTRY := ghcr.io
+GITHUB_USERNAME := YOUR_GITHUB_USERNAME
+IMAGE_REPO := go-secure-server
 IMAGE_VERSION := latest
-FULL_IMAGE_NAME := $(IMAGE_NAME):$(IMAGE_VERSION)
+# Full image name for GHCR: ghcr.io/<username>/go-secure-server:latest
+FULL_IMAGE_NAME := $(GHCR_REGISTRY)/$(GITHUB_USERNAME)/$(IMAGE_REPO):$(IMAGE_VERSION)
+
 CONTAINER_NAME := go-secure-server-test
 K8S_NAMESPACE := go-security-lab
 KUBE_CONTEXT := docker-desktop
@@ -13,41 +18,47 @@ TRIVY_BIN := "C:\Users\coole\scoop\shims\trivy.exe"
 NETPOL_FILE := k8s/network-policy.yaml
 
 # ============================================================================
-# PREREQUISITE CHECKS - SIMPLIFIED FOR WINDOWS
+# PREREQUISITE CHECKS
 # ============================================================================
 
 check-prerequisites:
-	@echo --- Checking Prerequisites ---
+	@echo --- Checking required tools ---
 	@docker version >nul 2>&1 && echo [OK] Docker found || (echo [ERROR] Docker not found && exit 1)
 	@kubectl version --client >nul 2>&1 && echo [OK] kubectl found || (echo [ERROR] kubectl not found && exit 1)
 	@helm version >nul 2>&1 && echo [OK] Helm found || (echo [ERROR] Helm not found && exit 1)
-	@if exist $(TRIVY_BIN) (echo [OK] Trivy found) else (echo [WARN] Trivy not found)
-	@echo [OK] All prerequisites checked
+	@if exist $(TRIVY_BIN) (echo [OK] Trivy found) else (echo [WARNING] Trivy not found)
+	@echo [OK] Prerequisites check completed
 
 # ============================================================================
-# MAIN TARGETS (Local Docker Management)
+# MAIN TARGETS (Docker Management)
 # ============================================================================
 
 all: security-quick
 
 build:
-	@echo --- Building Docker Image: $(FULL_IMAGE_NAME) ---
+	@echo --- Building Docker image: $(FULL_IMAGE_NAME) ---
 	docker build --pull -t $(FULL_IMAGE_NAME) .
-	@echo [OK] Successfully built: $(FULL_IMAGE_NAME)
+	@echo [OK] Image successfully built: $(FULL_IMAGE_NAME)
+
+push: build
+	@echo --- Pushing Docker image: $(FULL_IMAGE_NAME) to GHCR ---
+	# For GHCR, you may need to login first (docker login ghcr.io) using a PAT
+	docker push $(FULL_IMAGE_NAME)
+	@echo [OK] Image successfully pushed: $(FULL_IMAGE_NAME)
 
 run: stop build
-	@echo --- Running container on http://localhost:8080 ---
+	@echo --- Running container at http://localhost:8080 ---
 	docker run -d --rm --name $(CONTAINER_NAME) -p 8080:8080 $(FULL_IMAGE_NAME)
-	@echo [OK] Container $(CONTAINER_NAME) started successfully
+	@echo [OK] Container $(CONTAINER_NAME) successfully started
 	@echo.
 	@echo   #######################################################
-	@echo   #          SECURE HALLOWEEN SERVER STARTED           #
+	@echo   #         SECURE HALLOWEEN SERVER STARTED            #
 	@echo   #######################################################
 	@echo.
 	@echo Waiting for server to start...
 	@timeout /t 3 /nobreak >nul
-	@echo Server ready! Opening Halloween page...
-	@start http://localhost:8080/halloween 2>nul || echo Manual: Open http://localhost:8080/halloween in browser
+	@echo Server ready! Opening page...
+	@start http://localhost:8080/halloween 2>nul || echo Manually open http://localhost:8080/halloween in browser
 
 test: run
 	@echo.
@@ -61,13 +72,13 @@ stop:
 	@docker stop $(CONTAINER_NAME) 2>nul && echo Container stopped || echo Container was not running
 
 clean: stop
-	@echo --- Cleaning up Docker resources ---
-	@docker rmi $(FULL_IMAGE_NAME) 2>nul && echo Image deleted || echo Image not found
-	@docker system prune -f --volumes 2>nul && echo System cleaned || echo Cleanup completed
+	@echo --- Cleaning Docker resources ---
+	@docker rmi $(FULL_IMAGE_NAME) 2>nul && echo Image removed || echo Image not found
+	@docker system prune -f --volumes 2>nul && echo System cleanup completed || echo Cleanup completed
 	@echo [OK] Docker cleanup completed
 
 logs:
-	@echo --- Showing logs for $(CONTAINER_NAME) ---
+	@echo --- Viewing logs for $(CONTAINER_NAME) ---
 	@docker logs -f $(CONTAINER_NAME)
 
 # ============================================================================
@@ -75,12 +86,12 @@ logs:
 # ============================================================================
 
 scan: build
-	@echo --- Scanning Docker Image for HIGH/CRITICAL vulnerabilities using Trivy ---
+	@echo --- Scanning Docker image for HIGH/CRITICAL vulnerabilities with Trivy ---
 	$(TRIVY_BIN) image --severity HIGH,CRITICAL $(FULL_IMAGE_NAME)
 	@echo [OK] Trivy scan completed
 
 vulnerability-scan: build
-	@echo --- Comprehensive Vulnerability Assessment ---
+	@echo --- Comprehensive vulnerability assessment ---
 	@echo [INFO] Scanning $(FULL_IMAGE_NAME) for vulnerabilities...
 	$(TRIVY_BIN) image --format table --scanners vuln,misconfig --severity MEDIUM,HIGH,CRITICAL $(FULL_IMAGE_NAME)
 	@echo [OK] Vulnerability scan completed
@@ -94,9 +105,9 @@ scan-docker: build
 # ============================================================================
 
 falco-install-clean: k8s-check
-	@echo --- Complete Falco Cleanup and Fresh Install ---
+	@echo --- Complete Falco cleanup and fresh installation ---
 	@echo [INFO] Removing previous Falco resources...
-	@helm uninstall falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo No helm release found
+	@helm uninstall falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo Helm release not found
 	@kubectl delete namespace $(FALCO_NAMESPACE) --ignore-not-found=true --timeout=60s
 	@echo [INFO] Installing Falco...
 	@helm repo add falcosecurity https://falcosecurity.github.io/charts
@@ -105,17 +116,17 @@ falco-install-clean: k8s-check
 	@echo [OK] Falco installation completed!
 
 falco-logs:
-	@echo --- Falco Security Events ---
+	@echo --- Falco security events ---
 	@kubectl logs -l app=falco -n $(FALCO_NAMESPACE) -c falco --tail=50
 
 falco-test:
-	@echo --- Testing Falco Detection ---
-	@echo [TEST] Generating test security event...
+	@echo --- Testing Falco detection ---
+	@echo [TEST] Generating test security event (Reading /etc/shadow)...
 	@kubectl run falco-test --rm -i --tty --image=alpine --restart=Never --namespace $(K8S_NAMESPACE) -- sh -c "cat /etc/shadow"
 
 falco-clean:
 	@echo --- Removing Falco ---
-	@helm uninstall falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo No Falco release found
+	@helm uninstall falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo Falco release not found
 	@kubectl delete namespace $(FALCO_NAMESPACE) --ignore-not-found=true --timeout=60s
 	@echo [OK] Falco removed
 
@@ -124,18 +135,18 @@ falco-clean:
 # ============================================================================
 
 k8s-check:
-	@echo --- Checking Kubernetes Access ---
+	@echo --- Checking Kubernetes access ---
 	@kubectl config use-context $(KUBE_CONTEXT)
 	@kubectl cluster-info
-	@echo [OK] Kubernetes is ready!
+	@echo [OK] Kubernetes ready!
 
-k8s-deploy: build k8s-check
-	@echo --- Deploying Go Secure Server to Kubernetes ---
+k8s-deploy: push k8s-check
+	@echo --- Deploying Go Secure Server to Kubernetes (using PUSHED image from GHCR) ---
 	@kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	@kubectl apply -f k8s/ -n $(K8S_NAMESPACE)
-	@echo --- Waiting for deployment to be ready ---
+	@echo --- Waiting for deployment readiness ---
 	@kubectl wait --for=condition=ready pod -l app=go-secure-server -n $(K8S_NAMESPACE) --timeout=120s
-	@echo [OK] Application Deployment completed!
+	@echo [OK] Application deployment completed!
 
 k8s-access:
 	@echo --- Starting Port Forward ---
@@ -146,19 +157,19 @@ k8s-access:
 	@echo    - Halloween Page:  http://localhost:8080/halloween
 	@echo    - Halloween API:   http://localhost:8080/api/halloween
 	@echo.
-	@echo Press Ctrl+C to stop port-forwarding
+	@echo Press Ctrl+C to stop Port-Forwarding
 	@kubectl port-forward svc/go-secure-service 8080:8080 -n $(K8S_NAMESPACE)
 
 k8s-run: k8s-deploy k8s-access
 
 k8s-clean:
-	@echo --- Cleaning Kubernetes Application Resources ---
+	@echo --- Cleaning Kubernetes application resources ---
 	@kubectl delete -f k8s/ -n $(K8S_NAMESPACE) --ignore-not-found=true
 	@kubectl delete namespace $(K8S_NAMESPACE) --ignore-not-found=true --timeout=60s
 	@echo [OK] K8s application cleanup completed
 
 # ============================================================================
-# NETWORK POLICY TARGETS - SIMPLIFIED FOR WINDOWS
+# NETWORK POLICY TARGETS
 # ============================================================================
 
 netpol-apply: k8s-check
@@ -174,13 +185,13 @@ netpol-clean: k8s-check
 # SIMPLE NETPOL TEST - ONE COMMAND AT A TIME
 netpol-test: k8s-check
 	@echo --- Testing Network Policy ---
-	@echo 1. Testing service exists...
+	@echo 1. Checking service exists...
 	@kubectl get svc go-secure-service -n $(K8S_NAMESPACE)
 	@echo.
-	@echo 2. Running manual test (run this in separate terminal):
+	@echo 2. Run manual test (run this in a separate terminal):
 	@echo kubectl run test-pod --rm -it --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -v http://go-secure-service:8080/health
 	@echo.
-	@echo [OK] Manual test instructions displayed
+	@echo [OK] Manual testing instructions displayed
 
 # ALTERNATIVE: STEP-BY-STEP TEST
 netpol-test-step1:
@@ -208,33 +219,33 @@ check-netpol:
 	@kubectl get netpol -n $(K8S_NAMESPACE) -o wide
 
 manual-test:
-	@echo --- Manual Test Command ---
+	@echo --- Command for Manual Testing ---
 	@echo Run this command to test connectivity:
 	@echo kubectl run test-curl --rm -it --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -v http://go-secure-service:8080/health
 
 # ============================================================================
-# COMPREHENSIVE SECURITY PIPELINES - SIMPLIFIED
+# COMPREHENSIVE SECURITY PIPELINES
 # ============================================================================
 
-security-quick: build k8s-deploy
+security-quick: push k8s-deploy
 	@echo.
 	@echo [SUCCESS] QUICK SECURITY DEPLOYMENT COMPLETED!
-	@echo [OK] Docker image built
+	@echo [OK] Docker image built and pushed to GHCR
 	@echo [OK] K8s application deployed
 	@echo.
 	@echo [NEXT] Access with: make k8s-access
 
-security-full: build scan k8s-deploy netpol-apply
+security-full: push scan k8s-deploy netpol-apply
 	@echo.
 	@echo [SUCCESS] FULL SECURITY STACK DEPLOYED!
-	@echo [OK] Docker image built and scanned
+	@echo [OK] Docker image built, pushed, and scanned
 	@echo [OK] K8s application deployed
 	@echo [OK] Network Policy applied
 	@echo.
 	@echo [NEXT] Access with: make k8s-access
 
 security-clean: k8s-clean falco-clean clean
-	@echo --- Complete Security Environment Cleanup ---
+	@echo --- Complete security environment cleanup ---
 
 # ============================================================================
 # INFORMATION & HELP
@@ -243,33 +254,32 @@ security-clean: k8s-clean falco-clean clean
 help:
 	@echo.
 	@echo "================================================================================"
-	@echo "GO K8S SECURITY LAB - WINDOWS MAKEFILE"
+	@echo "GO K8S SECURITY LAB - WINDOWS MAKEFILE (GHCR)"
 	@echo "================================================================================"
 	@echo.
 	@echo "QUICK START:"
-	@echo "   make security-quick   - Build and deploy"
-	@echo "   make security-full    - Full security stack"
-	@echo "   make k8s-access       - Access application"
+	@echo "   make security-quick   - Build, push to GHCR, deploy"
+	@echo "   make security-full    - Full stack (scan, deploy, netpol)"
+	@echo "   make k8s-access       - Access app via port-forward"
 	@echo.
-	@echo "UTILITIES:"
-	@echo "   make check-service    - Check service"
-	@echo "   make check-pods       - Check pods"
-	@echo "   make check-netpol     - Check network policies"
-	@echo "   make manual-test      - Get test command"
-	@echo.
-	@echo "DOCKER:"
-	@echo "   make build            - Build image"
+	@echo "DOCKER & REGISTRY (GHCR):"
+	@echo "   make build            - Build image locally"
+	@echo "   make push             - Push image to GHCR (REQUIRES AUTHENTICATION!)"
 	@echo "   make run              - Run locally"
-	@echo "   make stop             - Stop container"
 	@echo.
-	@echo "SECURITY:"
-	@echo "   make scan             - Scan for vulnerabilities"
+	@echo "SECURITY (SCAN & FALCO):"
+	@echo "   make scan             - Vulnerability scan (High/Critical)"
 	@echo "   make falco-install-clean - Install Falco"
-	@echo "   make falco-logs       - View security events"
+	@echo "   make falco-logs       - View Falco events"
+	@echo "   make falco-test       - Run test to trigger Falco"
+	@echo.
+	@echo "KUBERNETES:"
+	@echo "   make k8s-deploy       - Deploy (runs push first)"
+	@echo "   make k8s-clean        - Remove K8s application resources"
 	@echo.
 	@echo "================================================================================"
 
-.PHONY: all build run test stop clean logs \
+.PHONY: all build push run test stop clean logs \
         check-prerequisites \
         scan vulnerability-scan scan-docker \
         falco-install-clean falco-logs falco-test falco-clean \
