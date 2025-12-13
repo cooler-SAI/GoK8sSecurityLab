@@ -4,7 +4,7 @@
 PROJECT_NAME := gok8ssecuritylab
 # !!! IMPORTANT: Replace 'YOUR_GITHUB_USERNAME' with your actual GitHub username !!!
 GHCR_REGISTRY := ghcr.io
-GITHUB_USERNAME := YOUR_GITHUB_USERNAME
+GITHUB_USERNAME := cooler-SAI
 IMAGE_REPO := go-secure-server
 IMAGE_VERSION := latest
 # Full image name for GHCR: ghcr.io/<username>/go-secure-server:latest
