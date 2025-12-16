@@ -2,12 +2,10 @@
 # PROJECT CONFIGURATION
 # ============================================================================
 PROJECT_NAME := gok8ssecuritylab
-# !!! IMPORTANT: Replace 'YOUR_GITHUB_USERNAME' with your actual GitHub username !!!
 GHCR_REGISTRY := ghcr.io
 GITHUB_USERNAME := cooler-sai
 IMAGE_REPO := go-secure-server
 IMAGE_VERSION := latest
-# Full image name for GHCR: ghcr.io/<username>/go-secure-server:latest
 IMAGE_NAME := $(GHCR_REGISTRY)/$(GITHUB_USERNAME)/$(IMAGE_REPO):$(IMAGE_VERSION)
 
 CONTAINER_NAME := go-secure-server-test
@@ -181,9 +179,11 @@ k8s-access:
 	@echo    - Halloween Page:  http://localhost:8080/halloween
 	@echo    - Halloween API:   http://localhost:8080/api/halloween
 	@echo.
+	@echo NOTE: Service uses port 80 internally, port-forward maps 8080->80
+	@echo.
 	@echo Press Ctrl+C to stop Port-Forwarding
 	@echo.
-	@kubectl port-forward svc/go-secure-service 8080:8080 -n $(K8S_NAMESPACE)
+	@kubectl port-forward svc/go-secure-service 8080:80 -n $(K8S_NAMESPACE)
 
 k8s-run: k8s-deploy k8s-access
 
@@ -213,78 +213,41 @@ check-status:
 	@echo.
 	@kubectl get pods -n $(K8S_NAMESPACE)
 
-# Get first pod name
-get-pod-name:
-	@kubectl get pods -n $(K8S_NAMESPACE) -l app=go-secure-server -o jsonpath="{.items[0].metadata.name}"
+# Test service on port 80 (service uses port 80, not 8080)
+test-service:
+	@echo --- Testing service connectivity (port 80) ---
+	@echo Service go-secure-service uses port 80
+	@echo Testing: http://go-secure-service:80/
+	@echo.
+	@kubectl run test-service-curl --rm -i --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -s http://go-secure-service:80/
 
-# Auto test inside cluster (takes first pod)
-test-cluster-auto:
-	@echo --- Testing application inside cluster (auto-select pod) ---
-	@for /f "tokens=*" %%i in ('kubectl get pods -n $(K8S_NAMESPACE) -l app^=go-secure-server -o jsonpath^="{.items[0].metadata.name}" 2^>nul') do @set POD_NAME=%%i
-	@if "%POD_NAME%"=="" (
-		echo [ERROR] No pods found with label app=go-secure-server!
-		kubectl get pods -n $(K8S_NAMESPACE) --show-labels
-		exit 1
-	)
-	@echo Testing pod: %POD_NAME%
-	@echo 1. Health check:
-	@kubectl exec -n $(K8S_NAMESPACE) %POD_NAME% -- curl -s http://localhost:8080/
-	@echo.
-	@echo 2. Halloween API:
-	@kubectl exec -n $(K8S_NAMESPACE) %POD_NAME% -- curl -s http://localhost:8080/api/halloween
-	@echo.
-	@echo [OK] Cluster test completed for pod: %POD_NAME%
+# Test service without port (defaults to 80)
+test-service-simple:
+	@echo --- Testing service (default port 80) ---
+	@kubectl run curl-simple --rm -i --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -s http://go-secure-service/
 
-# Specific pod tests (no search required)
-test-pod-qbfds:
-	@echo --- Testing specific pod: go-secure-server-78545bbf69-qbfds ---
-	@kubectl exec -n $(K8S_NAMESPACE) go-secure-server-78545bbf69-qbfds -- curl -s http://localhost:8080/
-	@echo [OK] Test completed
+# Validate everything works
+validate-deployment:
+	@echo --- Validating deployment ---
+	@echo 1. Checking pods:
+	@kubectl get pods -n $(K8S_NAMESPACE) -l app=go-secure-server
+	@echo.
+	@echo 2. Checking service:
+	@kubectl get svc go-secure-service -n $(K8S_NAMESPACE)
+	@echo.
+	@echo 3. Testing service connectivity:
+	@kubectl run validate-curl --rm -i --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- sh -c "echo 'Testing service...' && curl -s http://go-secure-service/"
+	@echo.
+	@echo [OK] Deployment validated!
 
-test-both-pods:
-	@echo --- Testing both pods ---
-	@echo Pod 1: go-secure-server-78545bbf69-qbfds
-	@kubectl exec -n $(K8S_NAMESPACE) go-secure-server-78545bbf69-qbfds -- curl -s http://localhost:8080/
+# Quick health check
+health-check:
+	@echo --- Quick health check ---
+	@echo Pods:
+	@kubectl get pods -n $(K8S_NAMESPACE) -l app=go-secure-server -o custom-columns=NAME:.metadata.name,STATUS:.status.phase,IP:.status.podIP
 	@echo.
-	@echo Pod 2: go-secure-server-78545bbf69-xgvfp
-	@kubectl exec -n $(K8S_NAMESPACE) go-secure-server-78545bbf69-xgvfp -- curl -s http://localhost:8080/
-	@echo.
-	@echo [OK] Both pods responding
-
-# Detailed application test inside cluster
-test-cluster-detailed:
-	@echo --- Detailed application test inside cluster ---
-	@for /f "tokens=*" %%i in ('kubectl get pods -n $(K8S_NAMESPACE) -l app^=go-secure-server -o jsonpath^="{.items[0].metadata.name}"') do @set POD_NAME=%%i
-	@if not defined POD_NAME (echo [ERROR] No pods found! && exit 1)
-	@echo Testing pod: %POD_NAME%
-	@echo.
-	@echo 1. Health endpoint:
-	@kubectl exec -n $(K8S_NAMESPACE) %POD_NAME% -- curl -s http://localhost:8080/
-	@echo.
-	@echo 2. Halloween API:
-	@kubectl exec -n $(K8S_NAMESPACE) %POD_NAME% -- curl -s http://localhost:8080/api/halloween
-	@echo.
-	@echo 3. Security headers check:
-	@kubectl exec -n $(K8S_NAMESPACE) %POD_NAME% -- curl -I -s http://localhost:8080/ | findstr "X-Content-Type-Options\|X-Frame-Options\|Content-Security-Policy"
-	@echo.
-	@echo 4. Service connectivity from another pod:
-	@echo Run in separate terminal: make test-service-connectivity
-	@echo.
-	@echo [OK] Detailed cluster test completed
-
-# Test service accessibility from another pod
-test-service-connectivity:
-	@echo --- Testing service connectivity from another pod ---
-	@echo Creating test pod to connect to go-secure-service...
-	@kubectl run test-connectivity --rm -i --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -s http://go-secure-service:8080/ | head -2
-
-# Validate entire deployment
-validate-deployment: check-pods test-both-pods
-	@echo.
-	@echo [SUCCESS] Deployment validated!
-	@echo [OK] Pods are running
-	@echo [OK] Application is responding
-	@echo [NEXT] Access locally: make k8s-access
+	@echo To test service: make test-service
+	@echo To access locally: make k8s-access
 
 # ============================================================================
 # NETWORK POLICY TARGETS
@@ -305,18 +268,10 @@ netpol-test: k8s-check
 	@echo 1. Checking service exists...
 	@kubectl get svc go-secure-service -n $(K8S_NAMESPACE)
 	@echo.
-	@echo 2. Run manual test (run this in a separate terminal):
-	@echo make test-service-connectivity
+	@echo 2. Test allowed port (80):
+	@kubectl run netpol-test-allowed --rm -i --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -v http://go-secure-service:80/health
 	@echo.
-	@echo [OK] Manual testing instructions displayed
-
-netpol-test-step1:
-	@echo Testing Port 80 (should fail)...
-	@kubectl run test-80 --rm -i --image=alpine --restart=Never --namespace $(K8S_NAMESPACE) --command -- sh -c "wget -qO- --timeout=5 http://go-secure-service:80/"
-
-netpol-test-step2:
-	@echo Testing Port 8080 (should work)...
-	@kubectl run test-8080 --rm -i --image=alpine --restart=Never --namespace $(K8S_NAMESPACE) --command -- sh -c "wget -qO- --timeout=5 http://go-secure-service:8080/health"
+	@echo [OK] Network policy test completed
 
 # ============================================================================
 # COMPREHENSIVE SECURITY PIPELINES
@@ -334,8 +289,7 @@ security-quick: build
 	@kubectl get pods -n $(K8S_NAMESPACE)
 	@echo.
 	@echo [NEXT] Access with: make k8s-access
-	@echo [DEBUG] View logs: make check-logs
-	@echo [TEST] Test inside cluster: make test-pod-qbfds
+	@echo [TEST] Validate deployment: make validate-deployment
 
 security-quick-push: push
 	@echo --- Deploying to Kubernetes (using GHCR image) ---
@@ -376,7 +330,7 @@ help:
 	@echo "   make security-quick        - Build and deploy locally"
 	@echo "   make security-quick-push   - Build, push to GHCR, deploy"
 	@echo "   make security-full         - Full stack (push, scan, deploy, netpol)"
-	@echo "   make k8s-access            - Access app via port-forward"
+	@echo "   make k8s-access            - Access app via port-forward (8080->80)"
 	@echo.
 	@echo "DOCKER & REGISTRY (GHCR):"
 	@echo "   make build                 - Build image locally"
@@ -398,15 +352,10 @@ help:
 	@echo "   make check-pods            - Check pod status"
 	@echo "   make check-logs            - View recent logs"
 	@echo "   make check-status          - Check deployment status"
-	@echo "   make test-pod-qbfds        - Test specific pod (quick)"
-	@echo "   make test-both-pods        - Test both pods"
-	@echo "   make test-cluster-auto     - Test app inside cluster (auto)"
-	@echo "   make test-cluster-detailed - Detailed cluster test"
-	@echo "   make test-service-connectivity - Test service access"
+	@echo "   make test-service          - Test service connectivity (port 80)"
+	@echo "   make test-service-simple   - Test service (default port)"
 	@echo "   make validate-deployment   - Full deployment validation"
-	@echo.
-	@echo "NETWORK POLICY:"
-	@echo "   make netpol-apply          - Apply network policy"
+	@echo "   make health-check          - Quick health check"
 	@echo "   make netpol-test           - Test network policy"
 	@echo.
 	@echo "================================================================================"
@@ -416,7 +365,6 @@ help:
         scan vulnerability-scan scan-docker \
         falco-install-clean falco-logs falco-test falco-clean \
         k8s-check k8s-deploy k8s-access k8s-run k8s-clean \
-        check-pods check-logs check-status get-pod-name \
-        test-cluster-auto test-pod-qbfds test-both-pods test-cluster-detailed test-service-connectivity validate-deployment \
-        netpol-apply netpol-clean netpol-test netpol-test-step1 netpol-test-step2 \
+        check-pods check-logs check-status test-service test-service-simple validate-deployment health-check \
+        netpol-apply netpol-clean netpol-test \
         security-quick security-quick-push security-full security-clean help
