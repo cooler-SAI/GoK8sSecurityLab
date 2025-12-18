@@ -18,7 +18,7 @@ spec:
         runAsUser: 1000
       containers:
         - name: go-secure-server
-          image: gok8ssecuritylab/go-secure-server:latest
+          image: ghcr.io/cooler-sai/go-secure-server:latest
           ports:
             - containerPort: 8080
           securityContext:
