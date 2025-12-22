@@ -28,7 +28,7 @@ check-prerequisites:
 	@echo --- Checking required tools ---
 	@docker version >nul 2>&1 && echo [OK] Docker found || (echo [ERROR] Docker not found && exit 1)
 	@kubectl version --client >nul 2>&1 && echo [OK] kubectl found || (echo [ERROR] kubectl not found && exit 1)
-	@helm version >nul 2>&1 && echo [OK] Helm found || (echo [ERROR] Helm not found && exit 1)
+	@helm version >nul 2>&1 && echo [OK] Helm found || (echo [ERROR] Helm found && exit 1)
 	@if exist $(TRIVY_BIN) (echo [OK] Trivy found) else (echo [WARNING] Trivy not found)
 	@echo [OK] Prerequisites check completed
 
@@ -100,7 +100,7 @@ logs:
 	@docker logs -f $(CONTAINER_NAME)
 
 # ============================================================================
-# SECURITY SCANNING TARGETS
+# SECURITY SCANNING TARGETS (ENHANCED)
 # ============================================================================
 
 scan: build
@@ -117,6 +117,43 @@ vulnerability-scan: build
 scan-docker: build
 	@echo --- Scanning with Docker Scout ---
 	docker scout quickview $(IMAGE_NAME)
+
+# STRICT IMAGE SCAN (CI/CD FAILURE)
+scan-strict: build
+	@echo --- Strict vulnerability scan (Fails on CRITICAL/HIGH) ---
+	@echo [INFO] Exits with code 1 if CRITICAL/HIGH vulnerabilities are found.
+	$(TRIVY_BIN) image \
+		--severity HIGH,CRITICAL \
+		--exit-code 1 \
+		--ignore-unfixed \
+		$(IMAGE_NAME) && \
+	echo "[PASS] No CRITICAL/HIGH vulnerabilities." || \
+	(echo "[FAIL] Build blocked: CRITICAL/HIGH vulnerabilities found!" && exit 1)
+
+# SCAN KUBERNETES MANIFESTS (IaC SECURITY)
+scan-manifests:
+	@echo --- Scanning Kubernetes YAML for misconfigurations ---
+	@echo [INFO] Scanning directory: k8s/
+	$(TRIVY_BIN) config --severity HIGH,CRITICAL k8s/
+	@echo [OK] Kubernetes manifest scan completed.
+
+# SCAN RUNNING KUBERNETES CLUSTER
+scan-cluster: k8s-check
+	@echo --- Scanning the entire Kubernetes cluster ---
+	@echo [INFO] This requires cluster-level permissions.
+	$(TRIVY_BIN) k8s \
+		--report summary \
+		--namespace $(K8S_NAMESPACE) \
+		cluster
+	@echo [OK] Cluster scan completed.
+
+# COMPREHENSIVE SCAN PIPELINE (ALL CHECKS)
+security-pipeline: scan-strict scan-manifests
+	@echo --- SECURITY PIPELINE PASSED ---
+	@echo [SUCCESS] All security checks passed.
+	@echo "  ✓ Container image scan (strict)"
+	@echo "  ✓ Kubernetes manifest scan"
+	@echo.
 
 # ============================================================================
 # FALCO RUNTIME SECURITY TARGETS
@@ -255,7 +292,7 @@ health-check:
 	@echo To access locally: make k8s-access
 
 # ============================================================================
-# NETWORK POLICY TARGETS
+# NETWORK POLICY & SECURITY TESTING TARGETS
 # ============================================================================
 
 netpol-apply: k8s-check
@@ -277,6 +314,25 @@ netpol-test: k8s-check
 	@kubectl run netpol-test-allowed --rm -i --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -v http://go-secure-service:80/health
 	@echo.
 	@echo [OK] Network policy test completed
+
+# POLICY TEST: SIMULATE MALICIOUS POD
+policy-test: k8s-check
+	@echo --- Testing Security Policy with Simulated Attack ---
+	@echo "[TEST 1] Deploying 'test-attacker' pod in namespace: $(K8S_NAMESPACE)"
+	@kubectl run test-attacker \
+		--image=alpine \
+		--restart=Never \
+		--namespace=$(K8S_NAMESPACE) \
+		--command -- sh -c "sleep 3600" 2>nul || echo "Pod might already exist."
+	@timeout /t 2 /nobreak >nul
+	@echo.
+	@echo "[TEST 2] Trying to access secure server from attacker pod..."
+	@kubectl exec test-attacker -n $(K8S_NAMESPACE) -- \
+		sh -c "echo 'Testing network policy...'; wget -qO- --timeout=3 http://go-secure-service:80/health || echo 'ACCESS BLOCKED (Expected with NetworkPolicy)'"
+	@echo.
+	@echo "[TEST 3] Cleanup..."
+	@kubectl delete pod test-attacker -n $(K8S_NAMESPACE) --ignore-not-found=true
+	@echo [OK] Security policy test completed.
 
 # ============================================================================
 # COMPREHENSIVE SECURITY PIPELINES
@@ -305,7 +361,7 @@ security-quick-push: push
 	@echo.
 	@echo [NEXT] Access with: make k8s-access
 
-security-full: push scan
+security-full: push security-pipeline
 	@echo --- Deploying full security stack ---
 	@kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	@kubectl apply -f k8s/ -n $(K8S_NAMESPACE)
@@ -343,8 +399,16 @@ help:
 	@echo "   make push                  - Push image to GHCR (requires login)"
 	@echo "   make run                   - Run locally"
 	@echo.
-	@echo "SECURITY (SCAN & FALCO):"
+	@echo "SECURITY SCANNING (ENHANCED):"
 	@echo "   make scan                  - Vulnerability scan (High/Critical)"
+	@echo "   make scan-strict           - Strict scan (fails on CRITICAL/HIGH)"
+	@echo "   make scan-manifests        - Scan k8s/ YAML files for misconfigs"
+	@echo "   make scan-cluster          - Scan the running K8s cluster"
+	@echo "   make security-pipeline     - Run full security scan pipeline"
+	@echo "   make vulnerability-scan    - Comprehensive vulnerability assessment"
+	@echo "   make scan-docker           - Scan with Docker Scout"
+	@echo.
+	@echo "RUNTIME SECURITY (FALCO):"
 	@echo "   make falco-install-clean   - Install Falco"
 	@echo "   make falco-logs            - View Falco events"
 	@echo "   make falco-test            - Run test to trigger Falco"
@@ -361,15 +425,16 @@ help:
 	@echo "   make test-service-simple   - Test service (default port)"
 	@echo "   make validate-deployment   - Full deployment validation"
 	@echo "   make health-check          - Quick health check"
+	@echo "   make policy-test           - Simulate attack to test NetworkPolicy"
 	@echo "   make netpol-test           - Test network policy"
 	@echo.
 	@echo "================================================================================"
 
 .PHONY: all build push run test stop clean logs \
         check-prerequisites docker-login \
-        scan vulnerability-scan scan-docker \
+        scan vulnerability-scan scan-docker scan-strict scan-manifests scan-cluster security-pipeline \
         falco-install-clean falco-logs falco-test falco-clean \
         k8s-check k8s-deploy k8s-access k8s-run k8s-clean \
         check-pods check-logs check-status test-service test-service-simple validate-deployment health-check \
-        netpol-apply netpol-clean netpol-test \
+        netpol-apply netpol-clean netpol-test policy-test \
         security-quick security-quick-push security-full security-clean help
