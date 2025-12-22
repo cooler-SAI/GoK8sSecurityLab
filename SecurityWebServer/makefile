@@ -16,6 +16,11 @@ TRIVY_BIN := "C:\Users\coole\scoop\shims\trivy.exe"
 NETPOL_FILE := k8s/network-policy.yaml
 
 # ============================================================================
+# GHCR Login
+# ============================================================================
+
+# echo <TOKEN> | docker login ghcr.io -u <GITHUB_NAME> --password-stdin
+
 # PREREQUISITE CHECKS
 # ============================================================================
 
