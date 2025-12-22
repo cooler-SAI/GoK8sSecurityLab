@@ -16,6 +16,32 @@ TRIVY_BIN := "C:\Users\coole\scoop\shims\trivy.exe"
 NETPOL_FILE := k8s/network-policy.yaml
 
 # ============================================================================
+# TRIVY MANAGEMENT (SIMPLIFIED FOR WINDOWS)
+# ============================================================================
+
+# Simple Trivy update target
+trivy-update:
+	@echo --- Updating Trivy to latest version ---
+	@scoop update trivy
+	@echo [OK] Trivy updated successfully
+
+# Show Trivy version
+trivy-version:
+	@echo --- Trivy Version Information ---
+	@$(TRIVY_BIN) --version
+	@echo.
+
+# Check if Trivy needs update (simplified)
+trivy-check:
+	@echo --- Checking Trivy ---
+	@if exist $(TRIVY_BIN) (
+		echo [OK] Trivy found at: $(TRIVY_BIN)
+		@$(TRIVY_BIN) --version
+	) else (
+		echo [WARNING] Trivy not found. Install with: scoop install trivy
+	)
+
+# ============================================================================
 # GHCR Login
 # ============================================================================
 
@@ -103,15 +129,22 @@ logs:
 # SECURITY SCANNING TARGETS (ENHANCED)
 # ============================================================================
 
+# Version check helper
+check-trivy-version:
+	@echo --- Trivy version check (run monthly) ---
+	@echo [INFO] Run 'make trivy-update' to update Trivy
+	@echo [INFO] Current version:
+	@$(TRIVY_BIN) --version | findstr "Version"
+
 scan: build
 	@echo --- Scanning Docker image for HIGH/CRITICAL vulnerabilities with Trivy ---
-	$(TRIVY_BIN) image --severity HIGH,CRITICAL $(IMAGE_NAME)
+	$(TRIVY_BIN) image --skip-version-check --severity HIGH,CRITICAL $(IMAGE_NAME)
 	@echo [OK] Trivy scan completed
 
 vulnerability-scan: build
 	@echo --- Comprehensive vulnerability assessment ---
 	@echo [INFO] Scanning $(IMAGE_NAME) for vulnerabilities...
-	$(TRIVY_BIN) image --format table --scanners vuln,misconfig --severity MEDIUM,HIGH,CRITICAL $(IMAGE_NAME)
+	$(TRIVY_BIN) image --skip-version-check --format table --scanners vuln,misconfig --severity MEDIUM,HIGH,CRITICAL $(IMAGE_NAME)
 	@echo [OK] Vulnerability scan completed
 
 scan-docker: build
@@ -123,6 +156,7 @@ scan-strict: build
 	@echo --- Strict vulnerability scan (Fails on CRITICAL/HIGH) ---
 	@echo [INFO] Exits with code 1 if CRITICAL/HIGH vulnerabilities are found.
 	$(TRIVY_BIN) image \
+		--skip-version-check \
 		--severity HIGH,CRITICAL \
 		--exit-code 1 \
 		--ignore-unfixed \
@@ -134,7 +168,7 @@ scan-strict: build
 scan-manifests:
 	@echo --- Scanning Kubernetes YAML for misconfigurations ---
 	@echo [INFO] Scanning directory: k8s/
-	$(TRIVY_BIN) config --severity HIGH,CRITICAL k8s/
+	$(TRIVY_BIN) config --skip-version-check --severity HIGH,CRITICAL k8s/
 	@echo [OK] Kubernetes manifest scan completed.
 
 # SCAN RUNNING KUBERNETES CLUSTER
@@ -142,13 +176,14 @@ scan-cluster: k8s-check
 	@echo --- Scanning the entire Kubernetes cluster ---
 	@echo [INFO] This requires cluster-level permissions.
 	$(TRIVY_BIN) k8s \
+		--skip-version-check \
 		--report summary \
 		--namespace $(K8S_NAMESPACE) \
 		cluster
 	@echo [OK] Cluster scan completed.
 
 # COMPREHENSIVE SCAN PIPELINE (ALL CHECKS)
-security-pipeline: scan-strict scan-manifests
+security-pipeline: check-trivy-version scan-strict scan-manifests
 	@echo --- SECURITY PIPELINE PASSED ---
 	@echo [SUCCESS] All security checks passed.
 	@echo "  ✓ Container image scan (strict)"
@@ -408,6 +443,11 @@ help:
 	@echo "   make vulnerability-scan    - Comprehensive vulnerability assessment"
 	@echo "   make scan-docker           - Scan with Docker Scout"
 	@echo.
+	@echo "TRIVY MANAGEMENT:"
+	@echo "   make trivy-update          - Update Trivy to latest version via Scoop"
+	@echo "   make trivy-version         - Show current Trivy version"
+	@echo "   make trivy-check           - Check if Trivy is installed"
+	@echo.
 	@echo "RUNTIME SECURITY (FALCO):"
 	@echo "   make falco-install-clean   - Install Falco"
 	@echo "   make falco-logs            - View Falco events"
@@ -437,4 +477,5 @@ help:
         k8s-check k8s-deploy k8s-access k8s-run k8s-clean \
         check-pods check-logs check-status test-service test-service-simple validate-deployment health-check \
         netpol-apply netpol-clean netpol-test policy-test \
-        security-quick security-quick-push security-full security-clean help
+        security-quick security-quick-push security-full security-clean help \
+        trivy-update trivy-version trivy-check check-trivy-version
