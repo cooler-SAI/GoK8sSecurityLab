@@ -12,7 +12,7 @@ CONTAINER_NAME := go-secure-server-test
 K8S_NAMESPACE := go-security-lab
 KUBE_CONTEXT := docker-desktop
 FALCO_NAMESPACE := falco
-TRIVY_BIN := "C:\Users\coole\scoop\shims\trivy.exe"
+TRIVY_BIN := trivy
 NETPOL_FILE := k8s/network-policy.yaml
 
 # ============================================================================
@@ -135,6 +135,23 @@ check-trivy-version:
 	@echo [INFO] Run 'make trivy-update' to update Trivy
 	@echo [INFO] Current version:
 	@$(TRIVY_BIN) --version | findstr "Version"
+
+# SIMPLE TRIVY SCAN (JUST SCAN, NO BUILD)
+trivy-scan:
+	@echo --- Simple Trivy scan of $(IMAGE_NAME) ---
+	@echo [INFO] If image doesn''t exist, run 'make build' first
+	@$(TRIVY_BIN) image --skip-version-check --severity HIGH,CRITICAL $(IMAGE_NAME)
+	@echo [OK] Trivy scan completed
+
+# TRIVY SCAN WITH PARAMETER
+trivy-scan-custom:
+ifdef IMAGE
+	@echo --- Trivy scan of custom image: $(IMAGE) ---
+	@$(TRIVY_BIN) image --skip-version-check --severity HIGH,CRITICAL $(IMAGE)
+else
+	@echo [ERROR] Please specify IMAGE parameter
+	@echo Example: make trivy-scan-custom IMAGE=alpine:latest
+endif
 
 scan: build
 	@echo --- Scanning Docker image for HIGH/CRITICAL vulnerabilities with Trivy ---
@@ -435,6 +452,8 @@ help:
 	@echo "   make run                   - Run locally"
 	@echo.
 	@echo "SECURITY SCANNING (ENHANCED):"
+	@echo "   make trivy-scan            - Simple scan of $(IMAGE_NAME) (no build)"
+	@echo "   make trivy-scan-custom     - Scan custom image (IMAGE=alpine:latest)"
 	@echo "   make scan                  - Vulnerability scan (High/Critical)"
 	@echo "   make scan-strict           - Strict scan (fails on CRITICAL/HIGH)"
 	@echo "   make scan-manifests        - Scan k8s/ YAML files for misconfigs"
@@ -472,6 +491,7 @@ help:
 
 .PHONY: all build push run test stop clean logs \
         check-prerequisites docker-login \
+        trivy-scan trivy-scan-custom \
         scan vulnerability-scan scan-docker scan-strict scan-manifests scan-cluster security-pipeline \
         falco-install-clean falco-logs falco-test falco-clean \
         k8s-check k8s-deploy k8s-access k8s-run k8s-clean \
