@@ -1,5 +1,5 @@
 # ============================================================================
-# PROJECT CONFIGURATION
+# PROJECT CONFIGURATION (WINDOWS COMPATIBLE)
 # ============================================================================
 PROJECT_NAME := gok8ssecuritylab
 GHCR_REGISTRY := ghcr.io
@@ -8,9 +8,6 @@ IMAGE_REPO := go-secure-server
 IMAGE_VERSION := latest
 IMAGE_NAME := $(GHCR_REGISTRY)/$(GITHUB_USERNAME)/$(IMAGE_REPO):$(IMAGE_VERSION)
 
-# Git metadata for traceability
-GIT_COMMIT := $(shell git rev-parse --short HEAD)
-GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 GIT_REPO_URL := https://github.com/$(GITHUB_USERNAME)/$(PROJECT_NAME)
 
 CONTAINER_NAME := go-secure-server-test
@@ -21,26 +18,23 @@ TRIVY_BIN := trivy
 NETPOL_FILE := k8s/network-policy.yaml
 
 # Port configuration
-HOST_PORT := 8081  # Changed from 8080 to avoid conflict with MiniTool ShadowMaker
+HOST_PORT := 8081
 CONTAINER_PORT := 8080
 
 # ============================================================================
 # TRIVY MANAGEMENT (SIMPLIFIED FOR WINDOWS)
 # ============================================================================
 
-# Simple Trivy update target
 trivy-update:
 	@echo --- Updating Trivy to latest version ---
 	@scoop update trivy
 	@echo [OK] Trivy updated successfully
 
-# Show Trivy version
 trivy-version:
 	@echo --- Trivy Version Information ---
 	@$(TRIVY_BIN) --version
 	@echo.
 
-# Check if Trivy needs update (simplified)
 trivy-check:
 	@echo --- Checking Trivy ---
 	@if exist $(TRIVY_BIN) (
@@ -54,9 +48,6 @@ trivy-check:
 # GHCR AUTHENTICATION
 # ============================================================================
 
-# Note: Use PAT token for authentication
-# Command template: echo <TOKEN> | docker login ghcr.io -u <GITHUB_NAME> --password-stdin
-
 docker-login:
 	@echo --- Authenticating with GHCR ---
 	@echo NOTE: You need a GitHub Personal Access Token (PAT) with 'write:packages' scope
@@ -66,7 +57,7 @@ docker-login:
 	@echo   docker login ghcr.io -u $(GITHUB_USERNAME)
 	@echo.
 	@echo For automation (Windows):
-	@echo   echo YOUR_PAT | docker login ghcr.io -u $(GITHUB_USERNAME) --password-stdin
+	@echo   echo YOUR_PAT ^| docker login ghcr.io -u $(GITHUB_USERNAME) --password-stdin
 
 # ============================================================================
 # PREREQUISITE CHECKS
@@ -81,24 +72,26 @@ check-prerequisites:
 	@echo [OK] Prerequisites check completed
 
 # ============================================================================
-# DOCKER BUILD WITH GIT METADATA
+# GIT HELPER FUNCTIONS (WINDOWS COMPATIBLE)
 # ============================================================================
 
-# Build with Git metadata for traceability
-build-with-metadata:
-	@echo --- Building Docker image with Git metadata: $(IMAGE_NAME):$(GIT_COMMIT) ---
-	docker build \
-		--pull \
-		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
-		--build-arg GIT_BRANCH=$(GIT_BRANCH) \
-		--build-arg VERSION=latest \
-		--label "org.opencontainers.image.revision=$(GIT_COMMIT)" \
-		--label "org.opencontainers.image.source=$(GIT_REPO_URL)" \
-		--label "org.opencontainers.image.created=$(shell date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-		-t $(IMAGE_NAME):$(GIT_COMMIT) \
-		-t $(IMAGE_NAME):latest \
-		.
-	@echo [OK] Image successfully built: $(IMAGE_NAME):$(GIT_COMMIT) and :latest
+# Get Git commit SHA
+get-git-commit:
+	@powershell -Command "git rev-parse --short HEAD"
+
+# Get Git branch
+get-git-branch:
+	@powershell -Command "git rev-parse --abbrev-ref HEAD"
+
+# Show Git info
+show-git-info:
+	@echo --- Git Information ---
+	@powershell -Command "$$commit = git rev-parse --short HEAD; $$branch = git rev-parse --abbrev-ref HEAD; Write-Host 'Commit: $$commit'; Write-Host 'Branch: $$branch'"
+	@echo.
+
+# ============================================================================
+# DOCKER BUILD (SIMPLE - ALWAYS WORKS)
+# ============================================================================
 
 # Standard build (backward compatibility)
 build:
@@ -106,35 +99,81 @@ build:
 	docker build --pull -t $(IMAGE_NAME) .
 	@echo [OK] Image successfully built: $(IMAGE_NAME)
 
-# Build multiple tags including Git SHA
-build-all: build build-with-metadata
+# Test build - без сложностей
+test-build:
+	@echo --- Test build ---
+	docker build -t ghcr.io/cooler-sai/go-secure-server:test .
+	@echo [OK] Test build completed
 
 # ============================================================================
-# DOCKER PUSH WITH MULTIPLE TAGS
+# DOCKER BUILD WITH GIT METADATA (POWERSHELL VERSION - WORKS)
 # ============================================================================
 
-# Push with Git SHA tag for traceability
-push-with-metadata: build-with-metadata
-	@echo --- Pushing Docker images to GHCR ---
-	@echo INFO: Ensure you are logged in to GHCR (make docker-login)
-	docker push $(IMAGE_NAME):$(GIT_COMMIT)
-	docker push $(IMAGE_NAME):latest
-	@echo [OK] Images successfully pushed:
-	@echo "  - $(IMAGE_NAME):$(GIT_COMMIT)"
-	@echo "  - $(IMAGE_NAME):latest"
+# PowerShell-based build (reliable on Windows)
+build-with-git:
+	@echo --- Building with Git metadata (PowerShell) ---
+	@powershell -Command " \
+		$$commit = git rev-parse --short HEAD; \
+		$$branch = git rev-parse --abbrev-ref HEAD; \
+		$$date = Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ'; \
+		$$image = 'ghcr.io/cooler-sai/go-secure-server'; \
+		Write-Host 'Git: $$commit ($$branch)' -ForegroundColor Cyan; \
+		Write-Host 'Building: $$image:$$commit' -ForegroundColor Yellow; \
+		docker build \
+			--build-arg GIT_COMMIT=$$commit \
+			--build-arg GIT_BRANCH=$$branch \
+			--build-arg BUILD_DATE=$$date \
+			--build-arg VERSION=latest \
+			-t $$image`:$$commit \
+			-t $$image`:latest \
+			.; \
+		if ($$LASTEXITCODE -eq 0) { \
+			Write-Host '✅ Build successful!' -ForegroundColor Green; \
+			docker images $$image`:*; \
+		} else { \
+			Write-Host '❌ Build failed!' -ForegroundColor Red; \
+		} \
+	"
 
-# Standard push (backward compatibility)
+# Simple build with commit tag (упрощенная версия)
+build-simple:
+	@echo --- Simple build with Git commit tag ---
+	@powershell -Command " \
+		$$commit = git rev-parse --short HEAD; \
+		$$image = 'ghcr.io/cooler-sai/go-secure-server'; \
+		Write-Host 'Commit: $$commit'; \
+		Write-Host 'Building: $$image:$$commit'; \
+		docker build -t $$image`:$$commit -t $$image`:latest .; \
+	"
+
+# ============================================================================
+# DOCKER PUSH
+# ============================================================================
+
+# Standard push
 push: build
 	@echo --- Pushing Docker image to GHCR: $(IMAGE_NAME) ---
 	@echo INFO: Ensure you are logged in to GHCR (make docker-login)
 	docker push $(IMAGE_NAME)
 	@echo [OK] Image successfully pushed: $(IMAGE_NAME)
 
+# Push with Git metadata
+push-with-git: build-with-git
+	@echo --- Pushing Docker images with Git metadata ---
+	@echo INFO: Ensure you are logged in to GHCR (make docker-login)
+	@powershell -Command " \
+		$$commit = git rev-parse --short HEAD; \
+		$$image = 'ghcr.io/cooler-sai/go-secure-server'; \
+		Write-Host 'Pushing: $$image:$$commit' -ForegroundColor Yellow; \
+		docker push $$image`:$$commit; \
+		docker push $$image`:latest; \
+		Write-Host '✅ Push completed!' -ForegroundColor Green; \
+	"
+
 # ============================================================================
 # DOCKER RUN & TEST
 # ============================================================================
 
-# Check port availability
 check-port:
 	@echo --- Checking port $(HOST_PORT) availability ---
 	@netstat -ano | findstr :$(HOST_PORT) >nul && \
@@ -142,7 +181,6 @@ check-port:
 		 echo Try: make run-on-port PORT=8082 && exit 1) || \
 		echo [OK] Port $(HOST_PORT) is available
 
-# Run on default port (8081)
 run: stop check-port build
 	@echo --- Running container at http://localhost:$(HOST_PORT) ---
 	docker run -d --rm --name $(CONTAINER_NAME) -p $(HOST_PORT):$(CONTAINER_PORT) $(IMAGE_NAME)
@@ -157,7 +195,6 @@ run: stop check-port build
 	@echo Server ready! Opening page...
 	@start http://localhost:$(HOST_PORT)/halloween 2>nul || echo Manually open http://localhost:$(HOST_PORT)/halloween in browser
 
-# Run on custom port
 run-on-port:
 ifdef PORT
 	@echo --- Running container at http://localhost:$(PORT) ---
@@ -171,7 +208,6 @@ else
 	@echo Example: make run-on-port PORT=9090
 endif
 
-# Test endpoints
 test: run
 	@echo.
 	@echo --- Testing endpoints ---
@@ -179,47 +215,41 @@ test: run
 	@curl -s http://localhost:$(HOST_PORT)/api/halloween | findstr "spookily_secure" >nul && echo API test passed || echo API test failed
 	@echo [OK] All tests completed
 
-# Stop container
 stop:
 	@echo --- Stopping container: $(CONTAINER_NAME) ---
 	@docker stop $(CONTAINER_NAME) 2>nul && echo Container stopped || echo Container was not running
 
-# Clean Docker resources
 clean: stop
 	@echo --- Cleaning Docker resources ---
 	@docker rmi $(IMAGE_NAME) 2>nul && echo Image removed || echo Image not found
 	@docker system prune -f --volumes 2>nul && echo System cleanup completed || echo Cleanup completed
 	@echo [OK] Docker cleanup completed
 
-# View container logs
 logs:
 	@echo --- Viewing logs for $(CONTAINER_NAME) ---
 	@docker logs -f $(CONTAINER_NAME)
 
 # Inspect image metadata
-inspect-metadata:
-	@echo --- Image metadata for $(IMAGE_NAME):latest ---
-	@docker inspect $(IMAGE_NAME):latest --format='{{range $k, $v := .Config.Labels}}{{printf "%s = %s\n" $k $v}}{{end}}'
+inspect:
+	@echo --- Inspecting image: $(IMAGE_NAME) ---
+	@docker inspect $(IMAGE_NAME) --format='{{range $$k, $$v := .Config.Labels}}{{printf "%-40s = %s\n" $$k $$v}}{{end}}'
 
 # ============================================================================
-# SECURITY SCANNING TARGETS
+# SECURITY SCANNING
 # ============================================================================
 
-# Version check helper
 check-trivy-version:
 	@echo --- Trivy version check (run monthly) ---
 	@echo [INFO] Run 'make trivy-update' to update Trivy
 	@echo [INFO] Current version:
 	@$(TRIVY_BIN) --version | findstr "Version"
 
-# Simple Trivy scan (no build)
 trivy-scan:
 	@echo --- Simple Trivy scan of $(IMAGE_NAME) ---
 	@echo [INFO] "If image doesn't exist, run 'make build' first"
 	@$(TRIVY_BIN) image --skip-version-check --severity HIGH,CRITICAL $(IMAGE_NAME)
 	@echo [OK] Trivy scan completed
 
-# Trivy scan with parameter
 trivy-scan-custom:
 ifdef IMAGE
 	@echo --- Trivy scan of custom image: $(IMAGE) ---
@@ -229,25 +259,21 @@ else
 	@echo Example: make trivy-scan-custom IMAGE=alpine:latest
 endif
 
-# Standard vulnerability scan
 scan: build
 	@echo --- Scanning Docker image for HIGH/CRITICAL vulnerabilities with Trivy ---
 	$(TRIVY_BIN) image --skip-version-check --severity HIGH,CRITICAL $(IMAGE_NAME)
 	@echo [OK] Trivy scan completed
 
-# Comprehensive vulnerability assessment
 vulnerability-scan: build
 	@echo --- Comprehensive vulnerability assessment ---
 	@echo [INFO] Scanning $(IMAGE_NAME) for vulnerabilities...
 	$(TRIVY_BIN) image --skip-version-check --format table --scanners vuln,misconfig --severity MEDIUM,HIGH,CRITICAL $(IMAGE_NAME)
 	@echo [OK] Vulnerability scan completed
 
-# Scan with Docker Scout
 scan-docker: build
 	@echo --- Scanning with Docker Scout ---
 	docker scout quickview $(IMAGE_NAME)
 
-# Strict scan (fails on CRITICAL/HIGH)
 scan-strict: build
 	@echo --- Strict vulnerability scan (Fails on CRITICAL/HIGH) ---
 	@echo [INFO] Exits with code 1 if CRITICAL/HIGH vulnerabilities are found.
@@ -260,14 +286,12 @@ scan-strict: build
 	echo "[PASS] No CRITICAL/HIGH vulnerabilities." || \
 	(echo "[FAIL] Build blocked: CRITICAL/HIGH vulnerabilities found!" && exit 1)
 
-# Scan Kubernetes manifests
 scan-manifests:
 	@echo --- Scanning Kubernetes YAML for misconfigurations ---
 	@echo [INFO] Scanning directory: k8s/
 	$(TRIVY_BIN) config --skip-version-check --severity HIGH,CRITICAL k8s/
 	@echo [OK] Kubernetes manifest scan completed.
 
-# Scan running Kubernetes cluster
 scan-cluster: k8s-check
 	@echo --- Scanning the entire Kubernetes cluster ---
 	@echo [INFO] This requires cluster-level permissions.
@@ -278,7 +302,6 @@ scan-cluster: k8s-check
 		cluster
 	@echo [OK] Cluster scan completed.
 
-# Comprehensive security pipeline
 security-pipeline: check-trivy-version scan-strict scan-manifests
 	@echo --- SECURITY PIPELINE PASSED ---
 	@echo [SUCCESS] All security checks passed.
@@ -290,7 +313,6 @@ security-pipeline: check-trivy-version scan-strict scan-manifests
 # FALCO RUNTIME SECURITY
 # ============================================================================
 
-# Clean Falco installation
 falco-install-clean: k8s-check
 	@echo --- Complete Falco cleanup and fresh installation ---
 	@echo [INFO] Removing previous Falco resources...
@@ -302,18 +324,15 @@ falco-install-clean: k8s-check
 	@helm upgrade --install falco falcosecurity/falco --namespace $(FALCO_NAMESPACE) --create-namespace --set falcosidekick.enabled=false
 	@echo [OK] Falco installation completed!
 
-# View Falco logs
 falco-logs:
 	@echo --- Falco security events ---
 	@kubectl logs -l app=falco -n $(FALCO_NAMESPACE) -c falco --tail=50
 
-# Test Falco detection
 falco-test:
 	@echo --- Testing Falco detection ---
 	@echo [TEST] Generating test security event (Reading /etc/shadow)...
 	@kubectl run falco-test --rm -i --tty --image=alpine --restart=Never --namespace $(K8S_NAMESPACE) -- sh -c "cat /etc/shadow"
 
-# Clean Falco
 falco-clean:
 	@echo --- Removing Falco ---
 	@helm uninstall falco -n $(FALCO_NAMESPACE) --wait 2>nul || echo Falco release not found
@@ -324,14 +343,12 @@ falco-clean:
 # KUBERNETES DEPLOYMENT
 # ============================================================================
 
-# Check Kubernetes access
 k8s-check:
 	@echo --- Checking Kubernetes access ---
 	@kubectl config use-context $(KUBE_CONTEXT)
 	@kubectl cluster-info
 	@echo [OK] Kubernetes ready!
 
-# Deploy to Kubernetes
 k8s-deploy: k8s-check
 	@echo --- Deploying Go Secure Server to Kubernetes (using image from GHCR) ---
 	@kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
@@ -349,7 +366,6 @@ k8s-deploy: k8s-check
 	@echo [OK] Application deployment submitted!
 	@echo To check logs: kubectl logs -n $(K8S_NAMESPACE) -l app=go-secure-server
 
-# Access via port-forward
 k8s-access:
 	@echo --- Starting Port Forward ---
 	@echo [INFO] Your Go Secure Server is now in K8s!
@@ -365,10 +381,8 @@ k8s-access:
 	@echo.
 	@kubectl port-forward svc/go-secure-service 8080:80 -n $(K8S_NAMESPACE)
 
-# Deploy and access
 k8s-run: k8s-deploy k8s-access
 
-# Clean Kubernetes resources
 k8s-clean:
 	@echo --- Cleaning Kubernetes application resources ---
 	@kubectl delete -f k8s/ -n $(K8S_NAMESPACE) --ignore-not-found=true
@@ -379,17 +393,14 @@ k8s-clean:
 # DEBUG & MONITORING
 # ============================================================================
 
-# Check pod status
 check-pods:
 	@echo --- Current pod status ---
 	@kubectl get pods -n $(K8S_NAMESPACE) -o wide
 
-# View recent logs
 check-logs:
 	@echo --- Recent logs ---
 	@kubectl logs -n $(K8S_NAMESPACE) -l app=go-secure-server --tail=20
 
-# Check deployment status
 check-status:
 	@echo --- Deployment status ---
 	@kubectl get deployment -n $(K8S_NAMESPACE)
@@ -398,7 +409,6 @@ check-status:
 	@echo.
 	@kubectl get pods -n $(K8S_NAMESPACE)
 
-# Test service connectivity (port 80)
 test-service:
 	@echo --- Testing service connectivity (port 80) ---
 	@echo Service go-secure-service uses port 80
@@ -406,12 +416,10 @@ test-service:
 	@echo.
 	@kubectl run test-service-curl --rm -i --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -s http://go-secure-service:80/
 
-# Test service without port (defaults to 80)
 test-service-simple:
 	@echo --- Testing service (default port 80) ---
 	@kubectl run curl-simple --rm -i --image=curlimages/curl --restart=Never --namespace $(K8S_NAMESPACE) -- curl -s http://go-secure-service/
 
-# Validate deployment
 validate-deployment:
 	@echo --- Validating deployment ---
 	@echo 1. Checking pods:
@@ -425,7 +433,6 @@ validate-deployment:
 	@echo.
 	@echo [OK] Deployment validated!
 
-# Quick health check
 health-check:
 	@echo --- Quick health check ---
 	@echo Pods:
@@ -438,19 +445,16 @@ health-check:
 # NETWORK POLICY & SECURITY TESTING
 # ============================================================================
 
-# Apply network policy
 netpol-apply: k8s-check
 	@echo --- Applying Network Policy ---
 	@kubectl apply -f $(NETPOL_FILE) -n $(K8S_NAMESPACE)
 	@echo [OK] NetworkPolicy applied
 
-# Remove network policy
 netpol-clean: k8s-check
 	@echo --- Removing Network Policy ---
 	@kubectl delete -f $(NETPOL_FILE) -n $(K8S_NAMESPACE) --ignore-not-found=true
 	@echo [OK] NetworkPolicy removed
 
-# Test network policy
 netpol-test: k8s-check
 	@echo --- Testing Network Policy ---
 	@echo 1. Checking service exists...
@@ -461,7 +465,6 @@ netpol-test: k8s-check
 	@echo.
 	@echo [OK] Network policy test completed
 
-# Policy test: simulate malicious pod
 policy-test: k8s-check
 	@echo --- Testing Security Policy with Simulated Attack ---
 	@echo "[TEST 1] Deploying 'test-attacker' pod in namespace: $(K8S_NAMESPACE)"
@@ -484,7 +487,6 @@ policy-test: k8s-check
 # COMPREHENSIVE SECURITY PIPELINES
 # ============================================================================
 
-# Quick security deployment
 security-quick: build
 	@echo --- Deploying to Kubernetes ---
 	@kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
@@ -499,7 +501,6 @@ security-quick: build
 	@echo [NEXT] Access with: make k8s-access
 	@echo [TEST] Validate deployment: make validate-deployment
 
-# Quick deployment with push
 security-quick-push: push
 	@echo --- Deploying to Kubernetes (using GHCR image) ---
 	@kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
@@ -509,7 +510,6 @@ security-quick-push: push
 	@echo.
 	@echo [NEXT] Access with: make k8s-access
 
-# Full security stack
 security-full: push security-pipeline
 	@echo --- Deploying full security stack ---
 	@kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
@@ -523,8 +523,7 @@ security-full: push security-pipeline
 	@echo.
 	@echo [NEXT] Access with: make k8s-access
 
-# Full security stack with Git metadata
-security-full-with-metadata: push-with-metadata security-pipeline
+security-full-with-git: push-with-git security-pipeline
 	@echo --- Deploying full security stack with Git metadata ---
 	@kubectl create namespace $(K8S_NAMESPACE) --dry-run=client -o yaml | kubectl apply -f -
 	@kubectl apply -f k8s/ -n $(K8S_NAMESPACE)
@@ -532,14 +531,13 @@ security-full-with-metadata: push-with-metadata security-pipeline
 	@echo.
 	@echo [SUCCESS] FULL SECURITY STACK WITH GIT METADATA DEPLOYED!
 	@echo [OK] Docker image built with Git metadata
-	@echo [OK] Image pushed with SHA tag: $(GIT_COMMIT)
+	@echo [OK] Image pushed with SHA tag
 	@echo [OK] Security scan completed
 	@echo [OK] K8s application deployed
 	@echo [OK] Network Policy applied
 	@echo.
 	@echo [NEXT] Access with: make k8s-access
 
-# Complete security environment cleanup
 security-clean: k8s-clean falco-clean clean
 	@echo --- Complete security environment cleanup ---
 
@@ -547,7 +545,6 @@ security-clean: k8s-clean falco-clean clean
 # CI/CD SIMULATION
 # ============================================================================
 
-# Simulate CI/CD pipeline locally
 ci-pipeline-local:
 	@echo --- Simulating CI/CD Pipeline Locally ---
 	@echo [STAGE 1] Prerequisites check
@@ -557,23 +554,25 @@ ci-pipeline-local:
 	make security-pipeline
 	@echo.
 	@echo [STAGE 3] Build with metadata
-	make build-with-metadata
+	make build-with-git
 	@echo.
-	@echo [STAGE 4] Image metadata inspection
-	make inspect-metadata
+	@echo [STAGE 4] Inspect image
+	make inspect
 	@echo.
 	@echo [STAGE 5] Deploy to Kubernetes
 	make k8s-deploy
 	@echo.
 	@echo [SUCCESS] CI/CD pipeline simulation completed!
 
-# GitHub Actions compatible commands
-ci-build-and-push:
+ci-build-and-push: build-with-git
 	@echo --- CI/CD: Build and push with Git metadata ---
-	make build-with-metadata
-	docker push $(IMAGE_NAME):$(GIT_COMMIT)
-	docker push $(IMAGE_NAME):latest
-	@echo [SUCCESS] CI/CD build and push completed
+	@powershell -Command " \
+		$$commit = git rev-parse --short HEAD; \
+		$$image = 'ghcr.io/cooler-sai/go-secure-server'; \
+		docker push $$image`:$$commit; \
+		docker push $$image`:latest; \
+		Write-Host '✅ CI/CD pipeline completed!' -ForegroundColor Green; \
+	"
 
 # ============================================================================
 # INFORMATION & HELP
@@ -585,61 +584,62 @@ help:
 	@echo "GO K8S SECURITY LAB - WINDOWS MAKEFILE (GHCR WITH GIT METADATA)"
 	@echo "================================================================================"
 	@echo.
-	@echo "GIT METADATA & TRACEABILITY:"
-	@echo "   make build-with-metadata    - Build with Git commit SHA as tag"
-	@echo "   make push-with-metadata     - Push both :SHA and :latest tags"
-	@echo "   make inspect-metadata       - View image labels and metadata"
-	@echo "   make ci-build-and-push      - CI/CD compatible build and push"
+	@echo "🚀 QUICK START:"
+	@echo "   make build                      - Build image"
+	@echo "   make build-with-git             - Build with Git metadata (RECOMMENDED)"
+	@echo "   make test-build                 - Simple test build"
+	@echo "   make push-with-git              - Push with Git metadata"
 	@echo.
-	@echo "QUICK START:"
-	@echo "   make security-quick         - Build and deploy locally (port 8081)"
-	@echo "   make run                    - Run locally on port 8081"
-	@echo "   make run-on-port PORT=9090  - Run on custom port"
-	@echo "   make k8s-access             - Access K8s app via port-forward"
+	@echo "🔧 GIT METADATA (WINDOWS):"
+	@echo "   make get-git-commit             - Get current Git commit SHA"
+	@echo "   make get-git-branch             - Get current Git branch"
+	@echo "   make show-git-info              - Show Git information"
+	@echo "   make inspect                    - View image labels and metadata"
 	@echo.
-	@echo "DOCKER & GHCR:"
-	@echo "   make docker-login           - Show GHCR login instructions"
-	@echo "   make build                  - Standard build"
-	@echo "   make push                   - Standard push"
-	@echo "   make build-all              - Build both standard and metadata versions"
+	@echo "🐳 DOCKER & GHCR:"
+	@echo "   make docker-login               - Show GHCR login instructions"
+	@echo "   make build                      - Standard build"
+	@echo "   make push                       - Standard push"
+	@echo "   make run                        - Run locally on port 8081"
+	@echo "   make run-on-port PORT=9090      - Run on custom port"
 	@echo.
-	@echo "SECURITY SCANNING:"
-	@echo "   make security-pipeline      - Run full security scan pipeline"
-	@echo "   make scan-strict            - Strict scan (fails on vulnerabilities)"
-	@echo "   make scan-manifests         - Scan Kubernetes YAML files"
-	@echo "   make trivy-scan             - Simple vulnerability scan"
+	@echo "🔐 SECURITY SCANNING:"
+	@echo "   make security-pipeline          - Run full security scan pipeline"
+	@echo "   make scan-strict                - Strict scan (fails on vulnerabilities)"
+	@echo "   make scan-manifests             - Scan Kubernetes YAML files"
 	@echo.
-	@echo "KUBERNETES:"
-	@echo "   make k8s-deploy             - Deploy to Kubernetes"
-	@echo "   make k8s-clean              - Remove K8s resources"
-	@echo "   make validate-deployment    - Validate K8s deployment"
-	@echo "   make policy-test            - Test network policies"
+	@echo "☸️ KUBERNETES:"
+	@echo "   make k8s-deploy                 - Deploy to Kubernetes"
+	@echo "   make k8s-access                 - Access via port-forward"
+	@echo "   make k8s-clean                  - Remove K8s resources"
 	@echo.
-	@echo "FALCO RUNTIME SECURITY:"
-	@echo "   make falco-install-clean    - Install Falco runtime security"
-	@echo "   make falco-test             - Test Falco detection"
+	@echo "🔄 CI/CD SIMULATION:"
+	@echo "   make ci-pipeline-local          - Simulate full CI/CD pipeline"
+	@echo "   make ci-build-and-push          - Build and push for CI/CD"
 	@echo.
-	@echo "CI/CD SIMULATION:"
-	@echo "   make ci-pipeline-local      - Simulate full CI/CD pipeline locally"
-	@echo "   make security-full-with-metadata - Full stack with Git traceability"
-	@echo.
-	@echo "CLEANUP:"
-	@echo "   make security-clean         - Complete cleanup"
-	@echo "   make clean                  - Clean Docker resources"
+	@echo "🧹 CLEANUP:"
+	@echo "   make security-clean             - Complete cleanup"
+	@echo "   make clean                      - Clean Docker resources"
 	@echo.
 	@echo "================================================================================"
-	@echo "Git Commit: $(GIT_COMMIT) | Branch: $(GIT_BRANCH)"
 	@echo "Image: $(IMAGE_NAME)"
+	@echo "GitHub: $(GIT_REPO_URL)"
 	@echo "GHCR: https://github.com/$(GITHUB_USERNAME)/$(PROJECT_NAME)/pkgs/container/$(IMAGE_REPO)"
 	@echo "================================================================================"
 
-.PHONY: all build build-with-metadata build-all push push-with-metadata run run-on-port test stop clean logs \
-        check-prerequisites docker-login inspect-metadata \
+# ============================================================================
+# PHONY TARGETS
+# ============================================================================
+.PHONY: all build test-build build-with-git build-simple \
+        push push-with-git \
+        run run-on-port test stop clean logs inspect \
+        check-prerequisites docker-login \
+        get-git-commit get-git-branch show-git-info \
         trivy-scan trivy-scan-custom scan vulnerability-scan scan-docker scan-strict scan-manifests scan-cluster security-pipeline \
         falco-install-clean falco-logs falco-test falco-clean \
         k8s-check k8s-deploy k8s-access k8s-run k8s-clean \
         check-pods check-logs check-status test-service test-service-simple validate-deployment health-check \
         netpol-apply netpol-clean netpol-test policy-test check-port \
-        security-quick security-quick-push security-full security-full-with-metadata security-clean \
+        security-quick security-quick-push security-full security-full-with-git security-clean \
         ci-pipeline-local ci-build-and-push help \
         trivy-update trivy-version trivy-check check-trivy-version
