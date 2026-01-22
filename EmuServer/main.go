@@ -1,15 +1,19 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
-// Colors for beautiful terminal output
+// Terminal colors
 const (
 	ColorReset  = "\033[0m"
 	ColorGreen  = "\033[32m"
@@ -18,77 +22,116 @@ const (
 	ColorCyan   = "\033[36m"
 )
 
+type Config struct {
+	Port      string
+	MaxDelay  int
+	ErrorRate int
+}
+
 func main() {
-	// 1. Setup startup parameters (flags)
-	port := flag.String("port", "8080", "Port to run the server on")
-	latency := flag.Int("delay", 0, "Maximum response delay in milliseconds")
-	errorRate := flag.Int("error-rate", 0, "Error chance percentage (0-100)")
+	cfg := Config{}
+	flag.StringVar(&cfg.Port, "port", "8080", "Port to run the server on")
+	flag.IntVar(&cfg.MaxDelay, "delay", 0, "Maximum response delay in ms")
+	flag.IntVar(&cfg.ErrorRate, "error-rate", 0, "Error chance percentage (0-100)")
 	flag.Parse()
 
-	// 2. Define routes (Handlers)
 	mux := http.NewServeMux()
 
-	// Main page
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		logRequest(r)
-		applyChaos(w, *latency, *errorRate)
-		_, err := fmt.Fprintf(w, "Server emulator running!\nPath: %s\nTime: %s", r.URL.Path, time.Now().Format(time.RFC1123))
-		if err != nil {
-			return
-		}
-	})
+	// 1. Handlers are now clean - only business logic
+	mux.HandleFunc("/", handleIndex)
+	mux.HandleFunc("/health", handleHealth)
 
-	// Health check endpoint
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		logRequest(r)
-		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte("OK"))
-		if err != nil {
-			return
-		}
-	})
-
-	// 3. Start server
-	serverAddr := ":" + *port
-	fmt.Printf("%s🚀 Emulator running on http://localhost%s%s\n", ColorGreen, serverAddr, ColorReset)
-	fmt.Printf("%s⚙️  Configuration: delay up to %dms, error chance %d%%%s\n", ColorCyan, *latency, *errorRate, ColorReset)
-	fmt.Println("--------------------------------------------------")
+	// 2. Wrap everything in Middleware (Chain of Responsibility)
+	// First log, then apply chaos, then execute logic
+	finalHandler := loggerMiddleware(chaosMiddleware(cfg, mux))
 
 	server := &http.Server{
-		Addr:         serverAddr,
-		Handler:      mux,
+		Addr:         ":" + cfg.Port,
+		Handler:      finalHandler,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatalf("Startup error: %v", err)
+	// 3. Graceful Shutdown (Critical for K8s)
+	// Don't let the server crash instantly, allow requests to finish processing
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		fmt.Printf("%s🚀 EmuServer started on :%s%s\n", ColorGreen, cfg.Port, ColorReset)
+		fmt.Printf("%s⚙️  Chaos: delay=%dms, errors=%d%%%s\n", ColorCyan, cfg.MaxDelay, cfg.ErrorRate, ColorReset)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Listen error: %v", err)
+		}
+	}()
+
+	<-done // Wait for signal (Ctrl+C or kill from K8s)
+	fmt.Printf("\n%s🛑 Shutting down gracefully...%s\n", ColorYellow, ColorReset)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server Shutdown Failed:%+v", err)
 	}
+	fmt.Println("👋 Server exited")
 }
 
-// logRequest prints information about incoming request to terminal
-func logRequest(r *http.Request) {
-	fmt.Printf("[%s] %s %s %s %s\n",
-		time.Now().Format("15:04:05"),
-		ColorYellow, r.Method, ColorReset,
-		r.URL.Path)
+// --- Middleware ---
+
+func loggerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		fmt.Printf("[%s] %s%s%s %s (Lat: %s)\n",
+			time.Now().Format("15:04:05"),
+			ColorYellow, r.Method, ColorReset,
+			r.URL.Path,
+			time.Since(start),
+		)
+	})
 }
 
-// applyChaos adds delays and random errors
-func applyChaos(w http.ResponseWriter, maxDelay int, errorRate int) {
-	// Create a new local random generator for thread safety
+func chaosMiddleware(cfg Config, next http.Handler) http.Handler {
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Skip /health, otherwise K8s will kill the container for "unhealthiness"
+		if r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
 
-	// Simulate delay
-	if maxDelay > 0 {
-		delay := rng.Intn(maxDelay)
-		time.Sleep(time.Duration(delay) * time.Millisecond)
+		// Simulate delay
+		if cfg.MaxDelay > 0 {
+			delay := rng.Intn(cfg.MaxDelay)
+			time.Sleep(time.Duration(delay) * time.Millisecond)
+		}
+
+		// Simulate error
+		if cfg.ErrorRate > 0 && rng.Intn(100) < cfg.ErrorRate {
+			fmt.Printf("%s[CHAOS] 500 Error for %s%s\n", ColorRed, r.URL.Path, ColorReset)
+			http.Error(w, "Chaos Monkey Error", http.StatusInternalServerError)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// --- Handlers ---
+
+func handleIndex(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain")
+	_, err := fmt.Fprintf(w, "EmuServer: %s\nTime: %s", r.URL.Path, time.Now().Format(time.RFC3339))
+	if err != nil {
+		return
 	}
+}
 
-	// Simulate error
-	if errorRate > 0 && rng.Intn(100) < errorRate {
-		fmt.Printf("%s[CHAOS] Generated random error 500%s\n", ColorRed, ColorReset)
-		http.Error(w, "Internal Server Error (Chaos Monkey)", http.StatusInternalServerError)
+func handleHealth(w http.ResponseWriter, _ *http.Request) {
+	w.WriteHeader(http.StatusOK)
+	_, err := w.Write([]byte("OK"))
+	if err != nil {
 		return
 	}
 }
