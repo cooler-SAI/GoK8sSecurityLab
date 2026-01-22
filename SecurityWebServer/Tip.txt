@@ -1,0 +1,24 @@
+Go K8s Security Lab Management Map
+
+This map will help you keep track of the commands we've added to the Makefile.
+
+1. When You've Changed Code (Go or HTML)
+   make run    - Builds a new image, stops the old one, and runs the fresh container
+   make test   - Checks that the API responds and the server is alive
+
+2. When It's Time to Check Security
+   make scan-strict       - Most important command. Fails if security vulnerabilities found
+   make scan-manifests    - Checks Kubernetes configurations for security issues
+   make security-pipeline - Runs all security checks in one command
+
+3. When It's Time to Deploy to Kubernetes
+   make push         - Sends verified image to GitHub Packages (GHCR)
+   make k8s-deploy   - Creates namespace in cluster and deploys server
+   make k8s-access   - Sets up tunnel to access website from cluster
+
+4. When You Need to Test Protection in Real Time
+   make netpol-apply        - Applies network firewall rules inside Kubernetes
+   make policy-test         - Tests network policies by simulating attack attempts
+   make falco-install-clean - Installs Falco runtime security monitoring
+
+Tip: Use 'make help' for detailed command descriptions.
