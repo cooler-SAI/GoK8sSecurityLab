@@ -1,4 +1,4 @@
-module SecurityWebServer
+module websecure
 
 go 1.25
 

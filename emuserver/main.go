@@ -58,7 +58,7 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		fmt.Printf("%s🚀 EmuServer started on :%s%s\n", ColorGreen, cfg.Port, ColorReset)
+		fmt.Printf("%s🚀 emuserver started on :%s%s\n", ColorGreen, cfg.Port, ColorReset)
 		fmt.Printf("%s⚙️  Chaos: delay=%dms, errors=%d%%%s\n", ColorCyan, cfg.MaxDelay, cfg.ErrorRate, ColorReset)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Listen error: %v", err)
@@ -122,7 +122,7 @@ func chaosMiddleware(cfg Config, next http.Handler) http.Handler {
 
 func handleIndex(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
-	_, err := fmt.Fprintf(w, "EmuServer: %s\nTime: %s", r.URL.Path, time.Now().Format(time.RFC3339))
+	_, err := fmt.Fprintf(w, "emuserver: %s\nTime: %s", r.URL.Path, time.Now().Format(time.RFC3339))
 	if err != nil {
 		return
 	}
