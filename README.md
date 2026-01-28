@@ -52,6 +52,6 @@ Once the services are deployed, you can explore the various security features th
 *   Use `emuserver` to test the resilience of `websecure`.
 *   Explore the different authentication and authorization features of `websecure`.
 
-## Contributing
+## Contributing info
 
 Contributions are welcome! If you have any ideas for new features or improvements, please open an issue or submit a pull request.
