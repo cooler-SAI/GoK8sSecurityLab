@@ -1,10 +1,10 @@
 package handler
 
 import (
-	"SecurityWebServer/middleware"
 	"encoding/json"
 	"net/http"
 	"time"
+	"websecure/middleware"
 )
 
 // JWTResponse response with JWT token

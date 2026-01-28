@@ -1,14 +1,14 @@
 package main
 
 import (
-	"SecurityWebServer/handler"
-	"SecurityWebServer/middleware"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"time"
+	"websecure/handler"
+	"websecure/middleware"
 )
 
 func main() {
