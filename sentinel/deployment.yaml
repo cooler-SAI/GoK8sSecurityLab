@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sentinel-guard
+  labels:
+    app: sentinel
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sentinel
+  template:
+    metadata:
+      labels:
+        app: sentinel
+    spec:
+      containers:
+        - name: sentinel-guard
+          image: sentinel-webhook:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - name: certs-vol
+              mountPath: /etc/webhook/certs
+              readOnly: true
+      volumes:
+        - name: certs-vol
+          secret:
+            secretName: sentinel-certs
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinel-service
+spec:
+  ports:
+    - port: 443
+      targetPort: 8443
+  selector:
+    app: sentinel
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: sentinel-webhook-config
+webhooks:
+  - name: sentinel-service.default.svc
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: sentinel-service
+        namespace: default
+        path: "/validate"
+      # INSERT HERE: [Convert]::ToBase64String([System.IO.File]::ReadAllBytes("certs/tls.crt"))
+      caBundle: "LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURNVENDQWhtZ0F3SUJBZ0lVSzJVcnZzVmloM0ZudS9iV3ZkUDVSVEFNVE9Nd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0tERW1NQ1FHQTFVRUF3d2RjMlZ1ZEdsdVpXd3RjMlZ5ZG1salpTNWtaV1poZFd4MExuTjJZdzB3SGhjTgpNall3TWpBeU1UZ3pOakl3V2hjTk1qY3dNakF5TVRnek5qSXdXakFvTVNZd0pBWURWUVFEREIxelpXNTBhVzVsCmJDMXpaWEoyYVdObExtUmxabUYxYkhRdWMzWmpEVENDQVNJd0RRWUpLb1pJaHZjTkFRRUJCUUFEZ2dFUEFEQ0MKQVFvQ2dnRUJBSjR5RjFLbzJkb2dTWUZsMlhENlBZWHFNMEhMNjlRSlBYQ0RtT21IdS9hYzcvcjZjdlNSa2RlKwppVXIxc2ZOTEtrcDdHOWZoYStUTVVZcW16NXM5cEdJcnJxdFJQekM2VzZQYlR6K1lTYlJnd3dSbVpML1hwMVVmCnFxV09pbDVMRWh2WmZJejlhcXdvQlViTXFIdkdoN04yeEVxRDFSbHBkRkpGam1zTFcwbEZmcnljbnZmL3J2TXcKanRxc0QvRzhJR3p5eitzTThkdENoOTh1enJ1VFNRbFNSU2VsRmEwenIxTUtzUGh1YWw3MlBnTzFNcGdWVkZoMApUQzJmUnc5bmZNQUFkQStxMi9hdTdOQW1vbGdBU1F0WFlWWjBVSkxqU05tamE1aG9PMHkwbklOZTNLNEdLV1ZwCnY2OTRsRStnUGJ2QUdIUEg5NzFJY2FpbC92NmNTd1VDQXdFQUFhTlRNRkV3SFFZRFZSME9CQllFRkNMN3pOTWEKaWNEL2pDQ3YzWDE4ajdlR09OUE1NQjhHQTFVZEl3UVlNQmFBRkNMN3pOTWFpY0QvakNDdjNYMThqN2VHT05QTQpNQThHQTFVZEV3RUIvd1FGTUFNQkFmOHdEUVlKS29aSWh2Y05BUUVMQlFBRGdnRUJBSVFHYXM2bTdnWUJlcVQ0ClhaWmZ2VzlvVkJzK3BRRmNVRUJHTG56dkVHR1dwck5KZHpJUVNHU1RNL0Ewb1Z1NFFhRGdnaS81MkVoZzJhQ3IKdFhtY1VTQVJyNjNIZVBpTVJWZlBkOVdLWGFqbTNyRzA4NlllcmhUWW42eUdSekg2VWRTbDlVQ25KbWlBSmFJQwpoYTZiNUN6YWg0U3dLU0ltTjBrR2htTFJuZGJmZk5hdTFDaHBPaXJGUERJTzhpdVcyTWoxZ0FMNWU3ZEtWQnArCitMeXhFRFBIcmZlcGI4WFFzL3RpSXdGL3MwM1BqdDJFcEp6VEo5d3ZHM080alU0Ni9sWjQyZHV3d0k2OFI3eHUKbkdpcTBjV2hxUVdSMWdWZDVLQzFCWlhIdGs2THpFUzJ1aU1MRkxaeHVIR2Z0UjZvMUx1QTJBZG8yWXZmcFduOQpzVW1aVERvPQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg=="
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        scope: "Namespaced"
