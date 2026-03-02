@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 
 	admissionv1 "k8s.io/api/admission/v1"
@@ -11,101 +12,87 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// AdmissionReviewHandler — main handler for requests from Kubernetes
-func handleAdmissionReview(w http.ResponseWriter, r *http.Request) {
-	var body []byte
-	if r.Body != nil {
-		if data, err := io.ReadAll(r.Body); err == nil {
-			body = data
-		}
-		defer func(Body io.ReadCloser) {
-			err := Body.Close()
-			if err != nil {
-				fmt.Printf("Error closing request body: %v\n", err)
-			}
-		}(r.Body)
-	}
+// validatePod contains the security logic for pod validation
+// It checks if any container is running in privileged mode
+// Returns: (allowed bool, message string)
+func validatePod(raw []byte) (bool, string) {
+	var pod corev1.Pod
 
-	if len(body) == 0 {
-		http.Error(w, "empty body", http.StatusBadRequest)
-		return
-	}
-
-	// Deserialize the request from K8s
-	ar := admissionv1.AdmissionReview{}
-	if err := json.Unmarshal(body, &ar); err != nil {
-		http.Error(w, "could not decode body", http.StatusBadRequest)
-		return
-	}
-
-	// Object being created (Pod)
-	raw := ar.Request.Object.Raw
-	pod := corev1.Pod{}
+	// Parse the pod object from JSON
 	if err := json.Unmarshal(raw, &pod); err != nil {
-		http.Error(w, "could not decode pod object", http.StatusBadRequest)
-		fmt.Printf("Error parsing pod: %v\n", err)
-		return
+		return false, "Could not decode Pod object"
 	}
 
-	fmt.Printf("[WEBHOOK] Checking pod: %s in namespace: %s\n", pod.Name, ar.Request.Namespace)
-
-	// SECURITY LOGIC
-	allowed := true
-	message := "Security check passed"
-
+	// Check each container in the pod
 	for _, container := range pod.Spec.Containers {
-		// Block if container wants to be privileged
-		if container.SecurityContext != nil && container.SecurityContext.Privileged != nil && *container.SecurityContext.Privileged {
-			allowed = false
-			message = "STOP: Privileged containers are strictly forbidden in this cluster!"
-			break
+		// Verify if container has privileged mode enabled
+		if container.SecurityContext != nil &&
+			container.SecurityContext.Privileged != nil &&
+			*container.SecurityContext.Privileged {
+			return false, "STOP: Privileged containers are forbidden!"
 		}
 	}
 
-	// Format response for Kubernetes
-	admissionResponse := &admissionv1.AdmissionResponse{
-		UID:     ar.Request.UID,
-		Allowed: allowed,
-		Result: &metav1.Status{
-			Message: message,
-		},
+	return true, "Success: Security check passed"
+}
+
+// handleAdmissionReview processes incoming admission webhook requests
+func handleAdmissionReview(w http.ResponseWriter, r *http.Request) {
+	// Read the request body
+	body, err := io.ReadAll(r.Body)
+	if err != nil || len(body) == 0 {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
 	}
 
-	response := admissionv1.AdmissionReview{
+	// Parse the AdmissionReview request
+	var ar admissionv1.AdmissionReview
+	if err := json.Unmarshal(body, &ar); err != nil {
+		http.Error(w, "decoding failed", http.StatusBadRequest)
+		return
+	}
+
+	// Execute the validation logic on the pod
+	allowed, message := validatePod(ar.Request.Object.Raw)
+
+	// Log the validation result
+	log.Printf("[WEBHOOK] Request UID: %s | Allowed: %v | Message: %s",
+		ar.Request.UID, allowed, message)
+
+	// Build the AdmissionReview response
+	responseReview := admissionv1.AdmissionReview{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "admission.k8s.io/v1",
 			Kind:       "AdmissionReview",
 		},
-		Response: admissionResponse,
+		Response: &admissionv1.AdmissionResponse{
+			UID:     ar.Request.UID,
+			Allowed: allowed,
+			Result: &metav1.Status{
+				Message: message,
+			},
+		},
 	}
 
-	resp, err := json.Marshal(response)
-	if err != nil {
-		http.Error(w, "could not encode response", http.StatusInternalServerError)
-		fmt.Printf("Error marshalling response: %v\n", err)
-		return
-	}
-
+	// Send the response
 	w.Header().Set("Content-Type", "application/json")
-	write, err := w.Write(resp)
-	if err != nil {
-		fmt.Printf("Error writing response: %v\n", err)
-		fmt.Printf("Bytes written: %v\n", write)
+	errResp := json.NewEncoder(w).Encode(responseReview)
+	if errResp != nil {
+		fmt.Printf("Error encoding response: %v\n", err)
 		return
 	}
 }
 
 func main() {
+	// Register the webhook endpoint
 	http.HandleFunc("/validate", handleAdmissionReview)
 
-	fmt.Println("Server starting on :8443 (HTTPS required for K8s)")
+	log.Println("🚀 Webhook server starting on :8443 (HTTPS)")
 
-	// In a real cluster, paths to TLS certificates should be provided here
-	// For testing we'll run it like this, but K8s requires TLS certificates
-	// signed by the cluster's CA
+	// Start HTTPS server with TLS certificates
+	// Note: cert.pem and key.pem files must exist in the same directory
 	err := http.ListenAndServeTLS(":8443", "cert.pem", "key.pem", nil)
 	if err != nil {
-		fmt.Printf("Failed to start server: %v\n", err)
-		fmt.Println("\nTIP: TLS certificates are required for the webhook to work.")
+		log.Fatal("Failed to start server: ", err)
 	}
 }
