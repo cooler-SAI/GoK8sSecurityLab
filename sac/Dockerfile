@@ -11,8 +11,10 @@ WORKDIR /root/
 
 COPY --from=builder /app/webhook .
 
-COPY cert.pem .
-COPY key.pem .
+# DO NOT COPY CERTIFICATES! They will come from Kubernetes secret
+# Remove these lines:
+# COPY cert.pem .
+# COPY key.pem .
 
 EXPOSE 8443
 CMD ["./webhook"]

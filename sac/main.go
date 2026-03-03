@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os" // Добавлено для проверки файлов
 
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -89,9 +90,21 @@ func main() {
 
 	log.Println("🚀 Webhook server starting on :8443 (HTTPS)")
 
+	// Определяем, какие сертификаты использовать (из секрета или локальные)
+	certFile := "cert.pem"
+	keyFile := "key.pem"
+
+	// Проверяем, есть ли сертификаты из секрета (приоритет)
+	if _, err := os.Stat("/certs/tls.crt"); err == nil {
+		certFile = "/certs/tls.crt"
+		keyFile = "/certs/tls.key"
+		log.Println("📁 Using certificates from /certs/ (Kubernetes secret)")
+	} else {
+		log.Println("⚠️  Using local certificates from current directory")
+	}
+
 	// Start HTTPS server with TLS certificates
-	// Note: cert.pem and key.pem files must exist in the same directory
-	err := http.ListenAndServeTLS(":8443", "cert.pem", "key.pem", nil)
+	err := http.ListenAndServeTLS(":8443", certFile, keyFile, nil)
 	if err != nil {
 		log.Fatal("Failed to start server: ", err)
 	}
