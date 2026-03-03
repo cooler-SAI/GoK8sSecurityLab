@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sac-webhook-deployment
+  namespace: default
+  labels:
+    app: sac-webhook-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: sac-webhook-deployment
+  template:
+    metadata:
+      labels:
+        app: sac-webhook-deployment
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: webhook
+          image: sac-webhook:v1
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--tls-cert-file=/certs/cert.pem"
+            - "--tls-private-key-file=/certs/key.pem"
+          ports:
+            - containerPort: 8443
+          volumeMounts:
+            - name: certs
+              mountPath: /certs
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8443
+              scheme: HTTPS
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+      volumes:
+        - name: certs
+          secret:
+            secretName: webhook-server-tls
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: sac-webhook-service
+  namespace: default
+spec:
+  ports:
+    - port: 443
+      targetPort: 8443
+  selector:
+    app: sac-webhook-deployment
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: sac-validation-webhook-config
+webhooks:
+  - name: sac-webhook-service.default.svc
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        name: sac-webhook-service
+        namespace: default
+        path: "/validate"
+      caBundle: "MIIDMjCCAVugAwIBAgIQGyBSTdHyzzq/poh/Lne+KjAKBggqhkjOPQQDAjA/MRswGQYDVQQKExJHb0s4cyBTZWN1cml0eSBMYWIxIDAeBgNVBAMTF3NhYy13ZWJob29rLmRlZmF1bHQuc3ZjMB4XDTI2MDIxNjE5NDYzNFoXDTI3MDIxNjE5NDYzNFowPzEbMBkGA1UEChMSR29LOHMgU2VjdXJpdHkgTGFiMSAwHgYDVQQDExdzYWMtd2ViaG9vay5kZWZhdWx0LnN2YzBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABFTAFn5b/wpbntXrYwQGSCilnojkODQhV0LHtKI/rtNh4IHsHpBtLCTOMJbNNdmZFnU3bsOHqeeG9XZfHWfKuSijNTAzMA4GA1UdDwEB/wQEAwIFoDATBgNVHSUEDDAKBggrBgEFBQcD
+ATAMBgNVHRMBAf8EAjAAMAoGCCqGSM49BAMCA0kAMEYCIQCuAKOIn9XxExHIWbX+OEl+8MHidTrv/8Uc0xMg0g5PggIhALiXKHHx3QJQ67iJpJ/oEnMr6RnSxSqQwwPtRVu8S+Hq"
+    rules:
+      - operations: ["CREATE", "UPDATE"]
+        apiGroups: [""]
+        apiVersions: ["v1"]
+        resources: ["pods"]
+        scope: "Namespaced"

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: sentinel-service
+  namespace: default
+spec:
+  selector:
+    app: sentinel-guard
+  ports:
+    - port: 443
+      targetPort: 8443
+      protocol: TCP
