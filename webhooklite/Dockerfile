@@ -6,7 +6,9 @@ COPY . .
 RUN go build -o webhooklite main.go
 
 FROM alpine:latest
+RUN apk add --no-cache ca-certificates
 WORKDIR /root/
 COPY --from=builder /app/webhooklite .
-EXPOSE 8080
+
+EXPOSE 8443
 CMD ["./webhooklite"]
