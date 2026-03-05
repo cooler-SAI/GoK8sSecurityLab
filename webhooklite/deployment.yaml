@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webhooklite-deployment
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webhooklite
+  template:
+    metadata:
+      labels:
+        app: webhooklite
+    spec:
+      containers:
+        - name: webhooklite
+          image: webhooklite:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
