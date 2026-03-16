@@ -3,12 +3,12 @@ WORKDIR /app
 COPY go.mod go.sum* ./
 RUN go mod download
 COPY . .
-RUN go build -o webhooklite main.go
+RUN go build -o webhook ./cmd/webhooklite
 
 FROM alpine:latest
 RUN apk add --no-cache ca-certificates
-WORKDIR /root/
-COPY --from=builder /app/webhooklite .
-COPY certificates/ ./certificates/
+WORKDIR /app
+COPY --from=builder /app/webhook .
+COPY certs/ /certs/
 EXPOSE 8443
-CMD ["./webhooklite"]
+CMD ["./webhook"]

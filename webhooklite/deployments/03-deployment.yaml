@@ -1,29 +1,32 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: webhooklite-deployment
-  namespace: default
+  name: webhook-deployment
+  namespace: webhook-system
+  labels:
+    app: webhook
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: webhooklite
+      app: webhook
   template:
     metadata:
       labels:
-        app: webhooklite
+        app: webhook
     spec:
+      serviceAccountName: webhook-sa
       containers:
-        - name: webhooklite
+        - name: webhook
           image: webhooklite:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8443
           volumeMounts:
             - name: certs
-              mountPath: /root/certificates
+              mountPath: /certs
               readOnly: true
       volumes:
         - name: certs
           secret:
-            secretName: webhooklite-certs
+            secretName: webhook-certs
