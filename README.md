@@ -8,13 +8,17 @@ This repository is a comprehensive security lab that provides a practical, hands
 
 ## Project Components
 
-This lab is composed of three main services:
+This lab is composed of several services:
 
 *   **`websecure`**: A Go web server that demonstrates application-level security best practices. It includes features like JWT-based authentication, rate limiting, security headers, and protection against common vulnerabilities like XSS. It also includes a vulnerable endpoint for demonstrating the importance of secure coding practices.
 
 *   **`emuserver`**: A chaos engineering tool designed to simulate an unstable or unreliable service. It can be configured to introduce random delays and errors into its responses, allowing you to test the resilience and fault tolerance of your applications.
 
 *   **`sentinel`**: A Kubernetes admission webhook that enforces security policies on pods before they are deployed to the cluster. It acts as a gatekeeper, preventing pods that violate predefined security rules (such as running as a privileged user) from being scheduled.
+
+*   **`sac`**: A Kubernetes admission webhook, written in Russian, that prevents privileged containers from being deployed. It serves as another example of an admission controller.
+
+*   **`webhooklite`**: A lightweight admission webhook that demonstrates a simple validation rule: it rejects any pod named "bad-pod". The code and logs are also in Russian.
 
 ## Security Features
 
@@ -48,7 +52,8 @@ Each service can be built and deployed independently. Refer to the `README.md` f
 
 Once the services are deployed, you can explore the various security features they demonstrate. For example, you can:
 
-*   Attempt to deploy a privileged pod and see it get blocked by `sentinel`.
+*   Attempt to deploy a privileged pod and see it get blocked by `sentinel` or `sac`.
+*   Attempt to deploy a pod named `bad-pod` and see it get blocked by `webhooklite`.
 *   Use `emuserver` to test the resilience of `websecure`.
 *   Explore the different authentication and authorization features of `websecure`.
 
