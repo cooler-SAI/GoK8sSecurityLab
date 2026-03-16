@@ -12,9 +12,10 @@ RUN addgroup -g 1001 -S appgroup && \
 
 WORKDIR /app
 COPY --from=builder /app/webhook .
-# Копируем из certificates/ в /certs/ (обрати внимание!)
-COPY certificates/ /certs/
+# Copy from the certs folder (which is in the project root) to /certs in the container
+COPY certs/ /certs/
 
+# Set permissions
 RUN chown -R appuser:appgroup /app && \
     chown -R appuser:appgroup /certs && \
     chmod 644 /certs/*
