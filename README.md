@@ -1,63 +1,73 @@
 # Go Kubernetes Security Lab
 
-This project is a hands-on lab demonstrating how to build and deploy a secure Go application on Kubernetes, following modern security best practices.
+[![Go Version](https://img.shields.io/badge/Go-1.26.3-blue.svg)](https://golang.org/)
+[![Kubernetes](https://img.shields.io/badge/Kubernetes-1.34-blue.svg)](https://kubernetes.io/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## Overview
+A hands-on security lab demonstrating how to build and deploy secure Go applications on Kubernetes with modern security best practices.
 
-This repository is a comprehensive security lab that provides a practical, hands-on experience for securing a containerized workload in a Kubernetes environment. It includes multiple services that work together to demonstrate a variety of security concepts, from application-level security to infrastructure-level enforcement.
+## 🎯 Overview
 
-## Project Components
+This repository is a comprehensive security lab that provides practical experience in securing containerized workloads in a Kubernetes environment. It includes multiple services demonstrating security concepts from application-level to infrastructure-level enforcement.
 
-This lab is composed of several services:
+## 📦 Project Components
 
-*   **`websecure`**: A Go web server that demonstrates application-level security best practices. It includes features like JWT-based authentication, rate limiting, security headers, and protection against common vulnerabilities like XSS. It also includes a vulnerable endpoint for demonstrating the importance of secure coding practices.
+### Core Services
 
-*   **`emuserver`**: A chaos engineering tool designed to simulate an unstable or unreliable service. It can be configured to introduce random delays and errors into its responses, allowing you to test the resilience and fault tolerance of your applications.
+| Service | Description | Language |
+|---------|-------------|----------|
+| **`websecure`** | Go web server with JWT auth, rate limiting, security headers, and XSS protection | Go |
+| **`emuserver`** | Chaos engineering tool for testing resilience (random delays/errors) | Go |
+| **`webhooklite`** | Production-ready admission webhook with 8 security policies | Go |
+| **`sentinel`** | Admission webhook blocking privileged containers | Go |
+| **`sac`** | Russian-language admission webhook example | Go |
 
-*   **`sentinel`**: A Kubernetes admission webhook that enforces security policies on pods before they are deployed to the cluster. It acts as a gatekeeper, preventing pods that violate predefined security rules (such as running as a privileged user) from being scheduled.
+### `webhooklite` — Admission Webhook (Main Focus)
 
-*   **`sac`**: A Kubernetes admission webhook, written in Russian, that prevents privileged containers from being deployed. It serves as another example of an admission controller.
+A lightweight but powerful Kubernetes admission webhook that validates pods **BEFORE** they enter the cluster.
 
-*   **`webhooklite`**: A lightweight admission webhook that demonstrates a simple validation rule: it rejects any pod named "bad-pod". The code and logs are also in Russian.
+#### 🔒 Security Rules Implemented
 
-## Security Features
+| Rule | What It Blocks |
+|------|----------------|
+| ❌ No privileged containers | `privileged: true` |
+| ❌ No latest tags | `image: nginx:latest` |
+| ❌ Resource limits required | Missing `resources.limits` |
+| ❌ runAsNonRoot required | `runAsNonRoot: false` |
+| ❌ No privilege escalation | `allowPrivilegeEscalation: true` |
+| ❌ No host access | `hostNetwork: true` or `hostPID: true` |
+| ❌ Allowed registries only | Unknown image registries |
+| ❌ No docker.socket | Mounting `/var/run/docker.sock` |
 
-This lab demonstrates a wide range of security features, including:
+## 🛡️ Security Features Demonstrated
 
-*   **Application-Level Security**:
-    *   **JWT Authentication**: Securely manage user sessions and protect endpoints with JSON Web Tokens.
-    *   **Rate Limiting**: Protect your services from abuse and denial-of-service attacks.
-    *   **Security Headers**: Harden your application against common web vulnerabilities like clickjacking and cross-site scripting (XSS).
-    *   **Role-Based Access Control (RBAC)**: Enforce different levels of access for different users.
+### Application-Level Security
+- **JWT Authentication** — Secure endpoint protection
+- **Rate Limiting** — DoS attack prevention
+- **Security Headers** — XSS, clickjacking protection
+- **RBAC** — Role-based access control
 
-*   **Infrastructure-Level Security**:
-    *   **Kubernetes Admission Webhooks**: Enforce custom security policies on your cluster.
-    *   **Hardened Dockerfiles**: Build minimal, secure container images using multi-stage builds and non-root users.
-    *   **Secure Kubernetes Deployments**: Configure your deployments with a strict security context to limit the blast radius of a potential compromise.
-    *   **Network Policies**: Isolate your services and control the flow of traffic between them.
+### Infrastructure-Level Security
+- **Admission Webhooks** — Custom cluster policies
+- **Hardened Dockerfiles** — Multi-stage, non-root builds
+- **Secure K8s Deployments** — Strict securityContext
+- **TLS Certificates** — Self-signed with proper SANs
+- **Network Policies** — Service isolation
 
-## How to Run the Lab
+## 🚀 Quick Start
 
 ### Prerequisites
+- Go 1.26+
+- Docker Desktop with Kubernetes enabled
+- kubectl
+- PowerShell 7+
 
-*   Go (1.18+)
-*   Docker & Kubectl
-*   A Kubernetes cluster (Minikube, Kind, or Docker Desktop)
+### Deploy Webhooklite
 
-### 1. Build and Deploy the Services
+```powershell
+# Clone repository
+git clone https://github.com/cooler-SAI/GoK8sSecurityLab.git
+cd GoK8sSecurityLab
 
-Each service can be built and deployed independently. Refer to the `README.md` file in each service's directory for detailed instructions.
-
-### 2. Explore the Security Features
-
-Once the services are deployed, you can explore the various security features they demonstrate. For example, you can:
-
-*   Attempt to deploy a privileged pod and see it get blocked by `sentinel` or `sac`.
-*   Attempt to deploy a pod named `bad-pod` and see it get blocked by `webhooklite`.
-*   Use `emuserver` to test the resilience of `websecure`.
-*   Explore the different authentication and authorization features of `websecure`.
-
-## Contributing info
-
-Contributions are welcome! If you have any ideas for new features or improvements, please open an issue or submit a pull request.
-Thanks
+# Generate certificates and deploy everything
+.\scripts\deploy.ps1
